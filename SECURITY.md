@@ -13,7 +13,7 @@ This repository (`Doxihewu-OmniMind-Kernel`) contains the public, reproducible k
 
 Please report all security issues privately via:
 
-1. **Private Email:** `psicofabs@gmail.com` / `fabricioslv@gmail.com`
+1. **Private Email:** `psicofabs@gmail.com` / `fabrcioslv@gmail.com`
 2. **GitHub Private Security Advisory:** `https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/security/advisories/new`
 
 Include reproduction steps, affected file paths/commits, and potential impact. We commit to an initial response and triage/remediation timeline within **48 to 72 hours**.
