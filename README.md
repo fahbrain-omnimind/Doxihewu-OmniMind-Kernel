@@ -250,11 +250,31 @@ However, **this is not a product**. It is a research artifact and an invitation.
 - **Risk criteria**: if you intend to run the kernel module, eBPF programs, or daemons on a production machine, you must understand the risks of kernel-level instrumentation, procfs writes, and resource consumption.
 - **Calibrated environment**: the daemons expect a `PROJECT_ROOT` environment variable and write to `data/` subdirectories. The fallback path is `/opt/omnimind`. Adjust to your environment.
 
-### Open invitation
+### Open Invitation to Reproduction, Audit, and Critique (EN / PT)
 
-This repository is an **open invitation to criticism, joint development, and collaborative thinking**.
-We do not claim this is the best approach. We claim it is an honest one, built under real constraints,
-and we invite you to improve it, challenge it, or build something entirely different.
+If you have an interest in any of the domains this project touches — Linux systems engineering and kernel internals, non-binary computing, particle physics and gravitational waves, biology/virology, neural networks, or psychoanalysis — and have technical or theoretical feedback to offer, consider yourself invited to **reproduce, audit, and critique** this work.
+
+You **do not need to subscribe to or endorse the ontological or theoretical constructs** orchestrated here in order to engage with this project. Our criterion is straightforward and empirical: whether the data, reproduction procedures, and code are **clear and auditable**, and whether the arguments are **clearly intelligible and open to scrutiny**. If you would like to run independent checks, report bugs, submit critiques, share, or financially support the ongoing maintenance of this independent research (hardware, power, and open infrastructure), please use the official channels below:
+
+- **Code & Reproducible Kernel Base (GitHub, Apache-2.0 / GPL-2.0):** https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel
+- **Public Agentic Worker (GitHub, Apache-2.0):** https://github.com/fahbrain-omnimind/omni_worker
+- **Python Package (PyPI, Apache-2.0):** https://pypi.org/project/omnimind-psychoanalytic-mesh/
+- **Triadic Public Base (HuggingFace):** https://huggingface.co/datasets/fabricioslv/omnimind-public-base-triad-test
+- **Reference Book (Zenodo DOI):** https://doi.org/10.5281/zenodo.22647857
+- **Issues, Reviews & Sponsorship:** via GitHub *Issues* and the *Sponsor* button (`.github/FUNDING.yml`).
+
+> **Português — Convite Aberto à Reprodução, Auditoria e Crítica:**
+> Se você tem interesse em algum dos domínios que este projeto atravessa — engenharia de sistemas e kernel Linux, computação não-binária, física de partículas e ondas gravitacionais, biologia/virologia, redes neurais ou psicanálise — e tem algo técnico ou teórico a oferecer, sinta-se desde já convidado(a) à **reprodução, auditoria e crítica**. Você **não precisa aderir nem assinar pelos constructos ontológicos ou teóricos** aqui orquestrados para dialogar com este trabalho: o critério é se os dados, as técnicas de reprodução e o código são **claros e auditáveis**, e se os argumentos são **compreensíveis e abertos ao escrutínio**, podendo também compartilhar e contribuir pelos meios oficiais acima.
+
+### Public Datasets & Acknowledgments (HuggingFace / Zenodo)
+
+We gratefully acknowledge the authors and open-science repositories whose public datasets make empirical cross-validation possible. All converted/mirrored public datasets below remain openly accessible on HuggingFace for independent reuse and verification (with original DOIs preserved in each repository card):
+
+- **Zenodo HEP / CLIC / Coupled Oscillators Parquet Mirror:** https://huggingface.co/datasets/fabricioslv/zenodo-dataset (DOIs: `10.5281/zenodo.20717190`, `10.1007/JHEP05(2019)036`, `10.1038/s41597-022-01187-8`, `10.5281/zenodo.24388802`)
+- **Unsupervised New Physics @ 40 MHz (LHC L1T):** https://huggingface.co/datasets/fabricioslv/unsupervised-new-physics-40mhz (DOI: `10.5281/zenodo.5046428`)
+- **Quantum Anomaly Detection at the LHC:** https://huggingface.co/datasets/fabricioslv/quantum-anomaly-detection-lhc (DOIs: `10.5281/zenodo.7673769`, `10.1038/s42005-024-01811-6`)
+- **CLIC Detector Particle Flow (MLPF):** https://huggingface.co/datasets/fabricioslv/clic-detector-particle-flow (DOIs: `10.5281/zenodo.15062717`, `10.5281/zenodo.8260741`)
+- **Gravitational Wave Autoencoders (LIGO L1):** https://huggingface.co/datasets/fabricioslv/gravitational-wave-autoencoders (DOIs: `10.5281/zenodo.5121510`, `10.1088/2632-2153/ac5435`)
 
 ## Technical specifications
 
