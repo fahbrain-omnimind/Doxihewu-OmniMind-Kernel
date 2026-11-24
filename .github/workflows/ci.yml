@@ -1,0 +1,44 @@
+name: Kernel Crates CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  rust-crates:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - metrics
+          - entropic_memory
+          - expectation_rs
+          - sovereign_kuramoto
+          - somatic_daemon
+          - memory_tier_guardian
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo test (${{ matrix.crate }})
+        run: cargo test --manifest-path "src/kernel/${{ matrix.crate }}/Cargo.toml"
+
+  sovereign-daemon-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check sovereign_daemon compilation
+        run: cargo check --manifest-path "src/kernel/sovereign_daemon/Cargo.toml"
+
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax check Python files
+        run: python -m compileall -q colab_public_base_triad.py tests src

@@ -2,7 +2,7 @@
 language:
   - pt
   - en
-license: cc-by-nc-nd-4.0
+license: apache-2.0
 tags:
   - omnimind
   - sovereign-ai
@@ -291,6 +291,7 @@ and we invite you to improve it, challenge it, or build something entirely diffe
 - **HuggingFace**: [fabricioslv/omnimind-public-base-triad-test](https://huggingface.co/datasets/fabricioslv/omnimind-public-base-triad-test)
 - **Book**: [https://doi.org/10.5281/zenodo.22647857](https://doi.org/10.5281/zenodo.22647857)
 - **License**: Apache-2.0 (framework) / GPL-2.0 (kernel module + eBPF)
+- **Audit & Support**: see [`AUDIT_AND_SUPPORT.md`](AUDIT_AND_SUPPORT.md) and [`SECURITY.md`](SECURITY.md)
 
 ---
 

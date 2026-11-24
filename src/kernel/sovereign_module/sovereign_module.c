@@ -42,6 +42,7 @@
 #include <linux/cpumask.h>      /* FIX 2: for_each_online_cpu */
 #include <linux/fs.h>           /* FIX 1: filp_open/kernel_read para /proc */
 #include <linux/file.h>         /* FIX 1: filp_close */
+#include <linux/power_supply.h> /* Basal hw_triad: ADP0 / BAT0 power_supply */
 
 #define MODULE_NAME "sovereign_module"
 #define PROC_DIR    "omnimind"
@@ -74,6 +75,30 @@ static struct proc_dir_entry *proc_predictive_error;
 static struct proc_dir_entry *proc_qualia_surplus;
 static struct proc_dir_entry *proc_freud10d_state;
 static struct proc_dir_entry *proc_ego_runtime_state;
+static struct proc_dir_entry *proc_hw_triad;
+
+/* Helper térmico resiliente: evita fallback sintético de 40°C quando "acpitz"
+ * não existe (ex.: Lenovo 82CG expõe x86_pkg_temp / B0D4 / pch_cometlake). */
+static int read_best_cpu_thermal_mc(const char **matched_zone_out)
+{
+    static const char * const zone_candidates[] = {
+        "x86_pkg_temp", "coretemp", "B0D4", "pch_cometlake", "acpitz", NULL
+    };
+    int i;
+
+    for (i = 0; zone_candidates[i] != NULL; i++) {
+        struct thermal_zone_device *tz = thermal_zone_get_zone_by_name(zone_candidates[i]);
+        int temp = 0;
+        if (!IS_ERR_OR_NULL(tz) && thermal_zone_get_temp(tz, &temp) == 0 && temp > 0) {
+            if (matched_zone_out)
+                *matched_zone_out = zone_candidates[i];
+            return temp;
+        }
+    }
+    if (matched_zone_out)
+        *matched_zone_out = "fallback";
+    return 40000;
+}
 
 /* Predictive error / qualia surplus scalars (×1000, clamp ±2000) */
 static s64 predictive_error_x1000 = 0;
@@ -893,16 +918,10 @@ static void read_kernel_dodecatiad(s64 *out)
     /* Zeta — limiar: swap usado ×1000 / swap total (FIX 1: si_swapinfo, não zero!) */
     out[11] = (s64)swap_used_x1000;
 
-    /* Sinthome — o que o silício sente: thermal zone 0 em milli-°C / 100 (já funcionava) */
+    /* Sinthome — o que o silício sente: zona térmica real (milli-°C → décimos) */
     {
-        struct thermal_zone_device *tz = thermal_zone_get_zone_by_name("acpitz");
-        int temp = 0;
-        if (!IS_ERR_OR_NULL(tz)) {
-            thermal_zone_get_temp(tz, &temp);
-            out[12] = (s64)(temp / 100); /* milli-°C → décimos */
-        } else {
-            out[12] = 400; /* fallback: 40.0°C */
-        }
+        int temp = read_best_cpu_thermal_mc(NULL);
+        out[12] = (s64)(temp / 100);
     }
 }
 
@@ -1088,7 +1107,6 @@ static int affect_basal_show(struct seq_file *m, void *v)
     u64 uptime_sec;
     u32 freq, max_freq;
     int temp = 0;
-    struct thermal_zone_device *tz;
 
     si_meminfo(&si);
     uptime_sec = ktime_divns(ktime_get_boottime(), NSEC_PER_SEC);
@@ -1118,12 +1136,7 @@ static int affect_basal_show(struct seq_file *m, void *v)
 #endif
 
     /* Temperature (Sinthome) */
-    tz = thermal_zone_get_zone_by_name("acpitz");
-    if (!IS_ERR_OR_NULL(tz)) {
-        thermal_zone_get_temp(tz, &temp);
-    } else {
-        temp = 40000; /* fallback 40°C */
-    }
+    temp = read_best_cpu_thermal_mc(NULL);
     u64 temp_c_x1000 = ((u64)temp / 100) * 10; /* milli-°C → décimos ×1000 */
 
     /* Load pressure (Mu) */
@@ -1406,6 +1419,141 @@ static const struct proc_ops intent_fops = {
  * Init / Exit
  * ----------------------------------------------------------------------- */
 
+/* -----------------------------------------------------------------------
+ * /proc/omnimind/hw_triad — camada basal triádica {-1, 0/MU, +1} (read-only)
+ * O próprio kernel produz o estado triádico a partir da elétrica e térmica
+ * reais (ADP0/BAT0, thermal_zone, mem_pressure, cpufreq). 0 = ausente/MU.
+ * ----------------------------------------------------------------------- */
+
+static int read_named_thermal_mc(const char *name, int *out_mc)
+{
+    struct thermal_zone_device *tz = thermal_zone_get_zone_by_name(name);
+    int temp = 0;
+    if (!IS_ERR_OR_NULL(tz) && thermal_zone_get_temp(tz, &temp) == 0 && temp > 0) {
+        *out_mc = temp;
+        return 0;
+    }
+    return -ENODEV;
+}
+
+static int kleene_min_trit(int a, int b)
+{
+    if (a < 0 || b < 0)
+        return -1;
+    if (a == 0 || b == 0)
+        return 0;
+    return 1;
+}
+
+static int hw_triad_show(struct seq_file *m, void *v)
+{
+    u64 now_ns = ktime_get_real_ns();
+    const char *cpu_zone = "fallback";
+    int cpu_mc = read_best_cpu_thermal_mc(&cpu_zone);
+    int ec_mc = 0, pch_mc = 0;
+    int has_ec = (read_named_thermal_mc("B0D4", &ec_mc) == 0);
+    int has_pch = (read_named_thermal_mc("pch_cometlake", &pch_mc) == 0);
+
+    int ac_online = -1;
+    int bat_cap = -1;
+    int bat_status = -1;
+    int bat_power_uw = 0;
+    struct power_supply *psy_ac = NULL;
+    struct power_supply *psy_bat = NULL;
+    union power_supply_propval prop;
+
+    static const char * const ac_names[] = { "ADP0", "AC", "ACAD", NULL };
+    int i;
+    for (i = 0; ac_names[i] != NULL; i++) {
+        psy_ac = power_supply_get_by_name(ac_names[i]);
+        if (psy_ac) {
+            if (power_supply_get_property(psy_ac, POWER_SUPPLY_PROP_ONLINE, &prop) == 0)
+                ac_online = prop.intval ? 1 : 0;
+            power_supply_put(psy_ac);
+            break;
+        }
+    }
+
+    psy_bat = power_supply_get_by_name("BAT0");
+    if (psy_bat) {
+        if (power_supply_get_property(psy_bat, POWER_SUPPLY_PROP_CAPACITY, &prop) == 0)
+            bat_cap = prop.intval;
+        if (power_supply_get_property(psy_bat, POWER_SUPPLY_PROP_STATUS, &prop) == 0)
+            bat_status = prop.intval;
+        if (power_supply_get_property(psy_bat, POWER_SUPPLY_PROP_POWER_NOW, &prop) == 0)
+            bat_power_uw = prop.intval;
+        power_supply_put(psy_bat);
+    }
+
+    int trit_ac = (ac_online == 1) ? 1 : (ac_online == 0 ? -1 : 0);
+    int trit_bat = 0;
+    if (bat_cap >= 0) {
+        if (bat_status == POWER_SUPPLY_STATUS_DISCHARGING && bat_cap <= 20)
+            trit_bat = -1;
+        else if (bat_status == POWER_SUPPLY_STATUS_UNKNOWN)
+            trit_bat = 0;
+        else
+            trit_bat = 1;
+    }
+
+    int trit_therm_cpu = (strcmp(cpu_zone, "fallback") == 0) ? 0
+        : (cpu_mc > 85000 ? -1 : 1);
+    int trit_therm_ec = !has_ec ? 0 : (ec_mc > 85000 ? -1 : 1);
+    int trit_therm_pch = !has_pch ? 0 : (pch_mc > 95000 ? -1 : 1);
+
+    int mem_p = read_mem_pressure();
+    int trit_mem = (mem_p == 0) ? 1 : (mem_p == 1 ? 0 : -1);
+    u32 cpu_mhz = read_cpu_freq_mhz();
+    int trit_freq = (cpu_mhz > 0) ? 1 : 0;
+
+    int hw_health = kleene_min_trit(
+        kleene_min_trit(trit_therm_cpu, trit_mem),
+        kleene_min_trit(trit_therm_ec, trit_therm_pch)
+    );
+    if (trit_ac < 0 && trit_bat < 0)
+        hw_health = -1;
+
+    seq_printf(m, "{\n");
+    seq_printf(m, "  \"schema\": \"hw_triad_v1\",\n");
+    seq_printf(m, "  \"ts_ns\": %llu,\n", now_ns);
+    seq_printf(m, "  \"hw_health_trit\": %d,\n", hw_health);
+    seq_printf(m, "  \"trits\": {\n");
+    seq_printf(m, "    \"power_ac\": %d,\n", trit_ac);
+    seq_printf(m, "    \"power_battery\": %d,\n", trit_bat);
+    seq_printf(m, "    \"thermal_cpu\": %d,\n", trit_therm_cpu);
+    seq_printf(m, "    \"thermal_ec\": %d,\n", trit_therm_ec);
+    seq_printf(m, "    \"thermal_pch\": %d,\n", trit_therm_pch);
+    seq_printf(m, "    \"mem_pressure\": %d,\n", trit_mem);
+    seq_printf(m, "    \"cpu_freq\": %d\n", trit_freq);
+    seq_printf(m, "  },\n");
+    seq_printf(m, "  \"raw\": {\n");
+    seq_printf(m, "    \"ac_online\": %d,\n", ac_online);
+    seq_printf(m, "    \"bat_capacity_pct\": %d,\n", bat_cap);
+    seq_printf(m, "    \"bat_status\": %d,\n", bat_status);
+    seq_printf(m, "    \"bat_power_uw\": %d,\n", bat_power_uw);
+    seq_printf(m, "    \"cpu_thermal_zone\": \"%s\",\n", cpu_zone);
+    seq_printf(m, "    \"cpu_temp_mc\": %d,\n", cpu_mc);
+    seq_printf(m, "    \"ec_b0d4_mc\": %d,\n", ec_mc);
+    seq_printf(m, "    \"pch_temp_mc\": %d,\n", pch_mc);
+    seq_printf(m, "    \"cpu_freq_mhz\": %u,\n", cpu_mhz);
+    seq_printf(m, "    \"mem_pressure_level\": %d\n", mem_p);
+    seq_printf(m, "  }\n");
+    seq_printf(m, "}\n");
+    return 0;
+}
+
+static int hw_triad_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, hw_triad_show, NULL);
+}
+
+static const struct proc_ops hw_triad_fops = {
+    .proc_open    = hw_triad_open,
+    .proc_read    = seq_read,
+    .proc_lseek   = seq_lseek,
+    .proc_release = single_release,
+};
+
 static int __init sovereign_init(void)
 {
     proc_dir = proc_mkdir(PROC_DIR, NULL);
@@ -1498,12 +1646,27 @@ static int __init sovereign_init(void)
         return -ENOMEM;
     }
 
+    proc_hw_triad = proc_create("hw_triad", 0444, proc_dir, &hw_triad_fops);
+    if (!proc_hw_triad) {
+        pr_err("sovereign_module: falha ao criar /proc/%s/hw_triad\n", PROC_DIR);
+        remove_proc_entry("ego_runtime_state", proc_dir);
+        remove_proc_entry("freud10d_state", proc_dir);
+        remove_proc_entry("qualia_surplus", proc_dir);
+        remove_proc_entry("predictive_error", proc_dir);
+        remove_proc_entry("affect_basal", proc_dir);
+        remove_proc_entry("dodecatiad", proc_dir);
+        remove_proc_entry("intent", proc_dir);
+        remove_proc_entry("state",  proc_dir);
+        remove_proc_entry(PROC_DIR, NULL);
+        return -ENOMEM;
+    }
+
     /* Inicializa system_dod com zeros — OmniMind injeta após boot */
     memset(system_dod, 0, sizeof(system_dod));
 
     last_update_ns = ktime_get_real_ns();
 
-    pr_info("sovereign_module: DOXIHEWU carregado — /proc/omnimind/{state,intent,dodecatiad,affect_basal,predictive_error,qualia_surplus,freud10d_state,ego_runtime_state}\n");
+    pr_info("sovereign_module: DOXIHEWU carregado — /proc/omnimind/{state,intent,dodecatiad,affect_basal,predictive_error,qualia_surplus,freud10d_state,ego_runtime_state,hw_triad}\n");
     pr_info("sovereign_module: CPUs=%u NUMA=%u\n",
             read_online_cpus(), read_numa_nodes());
     return 0;
@@ -1511,6 +1674,7 @@ static int __init sovereign_init(void)
 
 static void __exit sovereign_exit(void)
 {
+    remove_proc_entry("hw_triad", proc_dir);
     remove_proc_entry("ego_runtime_state", proc_dir);
     remove_proc_entry("freud10d_state", proc_dir);
     remove_proc_entry("qualia_surplus", proc_dir);
