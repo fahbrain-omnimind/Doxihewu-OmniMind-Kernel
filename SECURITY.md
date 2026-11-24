@@ -7,11 +7,13 @@ This repository (`Doxihewu-OmniMind-Kernel`) contains the public, reproducible k
 - Do **not** deploy `sovereign_module` or eBPF probes onto production hosts without reviewing `SECURITY_AUDIT.md` and `RISK_NOTICE.md`.
 - All `/proc/omnimind/hw_triad` hardware telemetry surfaces are strictly read-only (`0444`).
 
-## Reporting a Vulnerability
+## Reporting a Vulnerability (Private Disclosure Only)
 
-If you discover a security issue (e.g., buffer/bounds issue in C/Rust, privilege escalation in procfs/eBPF, or unsafe SQL/serialization handling):
+**DO NOT open a public GitHub Issue** for severe, critical, or sensitive security vulnerabilities — especially anything involving **API tokens, keys, credentials, secrets, privilege escalation, or remote execution**.
 
-1. **Preferred:** Open a private GitHub Security Advisory at `https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/security/advisories/new`.
-2. **Alternative:** Open a GitHub Issue marked `[security]` (without posting exploitable secrets/credentials).
+Please report all security issues privately via:
 
-We aim to acknowledge reports within 72 hours and ship a verified patch + regression test.
+1. **Private Email:** `psicofabs@gmail.com` / `fabricioslv@gmail.com`
+2. **GitHub Private Security Advisory:** `https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/security/advisories/new`
+
+Include reproduction steps, affected file paths/commits, and potential impact. We commit to an initial response and triage/remediation timeline within **48 to 72 hours**.
