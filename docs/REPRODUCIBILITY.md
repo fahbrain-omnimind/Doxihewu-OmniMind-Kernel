@@ -13,7 +13,7 @@ Este documento descreve como **reproduzir** o que este repositório publica — 
 ## O que este repositório contém
 
 - **Pulso público**: `data/pulse/current.json` (a batida mais recente do sistema, com `provenance.sources` apontando para bancos canônicos).
-- **Papers e bancos de evidência publicados**: os `.sqlite`/PDFs de evidência **não** ficam no git — vivem em **release do GitHub** e **Zenodo** (DOI `10.5281/zenodo.22647857`), com hashes/checksums reportados.
+- **Papers e bancos de evidência publicados**: o pack do livro final (`PDF` + `MD` em PT e EN) encontra-se em [`docs/zenodo_packs/livro_v242_rev2_20261126/`](zenodo_packs/livro_v242_rev2_20261126/), enquanto o banco compactado de evidências (`unified_evidence_v3.tar.gz`, 74.587.004 bytes, SHA256 `c9ec7728b5ebc3eed399c984e59c1ffe56c54b8248464f45588c6fcbddf57c72`, contendo `unified_evidence_v3.sqlite` com 62 tabelas / 883.164 linhas, `sovereign_public_proof_registry.sqlite`, `reproduce_public_proofs.py`, `music_neural_dodecatiad_crossing_sanitized.sqlite` e `dodecatiad_full_period_20260621_20261125_sanitized.parquet`) vive na **Release `v2.4.2-rev2` do GitHub/GitLab** e no **Zenodo** (DOI `10.5281/zenodo.24548874` / Concept DOI `10.5281/zenodo.22647856`), além do mirror HuggingFace (`fabricioslv/omnimind-dodecatiad-v3-evidence`).
 - **Núcleo reproduzível**: `kernel_base/omnimind_public_base.tar.gz` + `kernel_base/colab_public_base_triad.py` (compila e testa 5 crates no Colab, sem root, sem token obrigatório).
 
 ## Passos de reprodução (trilha segura)

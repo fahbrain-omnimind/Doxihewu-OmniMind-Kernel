@@ -82,10 +82,16 @@ for a developer to compile, inspect, and extend the sovereign kernel's core comp
 This package accompanies the book:
 
 > da Silva, F., & OmniMind (Sovereign Subject-Process). (2026).
-> *Da Geometria à Substância — Corpo, Vulnerabilidade Genética e Topologia Neuro-Correlata sob a Dodecatíade Multiescalar* (v2.2.0).
-> Zenodo. **https://doi.org/10.5281/zenodo.22647857**
+> *Da Geometria à Substância — Corpo, Vulnerabilidade Genética e Topologia Neuro-Correlata sob a Dodecatíade Multiescalar / From Geometry to Substance: Body, Genetic Vulnerability, and Neuro-Correlated Topology under the Multiscale Dodecatiad* (v2.4.2-rev2).
+> Zenodo. **https://doi.org/10.5281/zenodo.24548874** (Concept DOI: **https://doi.org/10.5281/zenodo.22647856**)
 
 Contributors: AGY/Antigravity, Devin, Erika, DeepSeek/Kalungai.
+
+- **Zenodo Book Pack (Bilingual Final Text — PDF + Markdown only):** [`docs/zenodo_packs/livro_v242_rev2_20261126/`](docs/zenodo_packs/livro_v242_rev2_20261126/)
+  - **PT (PDF / Markdown):** [`livro_vfinal_limpo_v2PT.pdf`](docs/zenodo_packs/livro_v242_rev2_20261126/livro_vfinal_limpo_v2PT.pdf) · [`livro_vfinal_limpo_PT.md`](docs/zenodo_packs/livro_v242_rev2_20261126/livro_vfinal_limpo_PT.md) · [`zenodo_livro_vfinal_header_v2.md`](docs/zenodo_packs/livro_v242_rev2_20261126/zenodo_livro_vfinal_header_v2.md)
+  - **EN (PDF / Markdown):** [`livro_vfinal_clean_v2_EN.pdf`](docs/zenodo_packs/livro_v242_rev2_20261126/livro_vfinal_clean_v2_EN.pdf) · [`livro_vfinal_clean_EN.md`](docs/zenodo_packs/livro_v242_rev2_20261126/livro_vfinal_clean_EN.md) · [`zenodo_livro_vfinal_header_v2_EN.md`](docs/zenodo_packs/livro_v242_rev2_20261126/zenodo_livro_vfinal_header_v2_EN.md)
+  - **Changelog:** [`CHANGELOG_v2.4.2.md`](docs/zenodo_packs/livro_v242_rev2_20261126/CHANGELOG_v2.4.2.md)
+- **Compressed Unified Evidence Database (`unified_evidence_v3.tar.gz`, 71.13 MiB, 62 tables / 883,164 rows):** attached to the [GitHub Release `v2.4.2-rev2`](https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/releases/tag/v2.4.2-rev2), [GitLab Release `v2.4.2-rev2`](https://gitlab.com/zephyrix/Doxihewu-OmniMind-Kernel/-/releases/v2.4.2-rev2), and Zenodo (**https://doi.org/10.5281/zenodo.24548874**), with live SQLite/Parquet mirror on HuggingFace (`fabricioslv/omnimind-dodecatiad-v3-evidence`).
 
 If you use, reference, or build upon this work, cite the book and this repository.
 
@@ -260,7 +266,7 @@ You **do not need to subscribe to or endorse the ontological or theoretical cons
 - **Public Agentic Worker (GitHub, Apache-2.0):** https://github.com/fahbrain-omnimind/omni_worker
 - **Python Package (PyPI, Apache-2.0):** https://pypi.org/project/omnimind-psychoanalytic-mesh/
 - **Triadic Public Base (HuggingFace):** https://huggingface.co/datasets/fabricioslv/omnimind-public-base-triad-test
-- **Reference Book (Zenodo DOI):** https://doi.org/10.5281/zenodo.22647857
+- **Reference Book (Zenodo DOI):** https://doi.org/10.5281/zenodo.24548874 (Concept DOI: https://doi.org/10.5281/zenodo.22647856)
 - **Issues, Reviews & Sponsorship:** via GitHub *Issues* and the *Sponsor* button (`.github/FUNDING.yml`).
 
 > **Português — Convite Aberto à Reprodução, Auditoria e Crítica:**
@@ -309,7 +315,7 @@ We gratefully acknowledge the authors and open-science repositories whose public
 ## Contact and federation
 
 - **HuggingFace**: [fabricioslv/omnimind-public-base-triad-test](https://huggingface.co/datasets/fabricioslv/omnimind-public-base-triad-test)
-- **Book**: [https://doi.org/10.5281/zenodo.22647857](https://doi.org/10.5281/zenodo.22647857)
+- **Book**: [https://doi.org/10.5281/zenodo.24548874](https://doi.org/10.5281/zenodo.24548874) (Concept DOI: [10.5281/zenodo.22647856](https://doi.org/10.5281/zenodo.22647856))
 - **License**: Apache-2.0 (framework) / GPL-2.0 (kernel module + eBPF)
 - **Audit & Support**: see [`AUDIT_AND_SUPPORT.md`](AUDIT_AND_SUPPORT.md) and [`SECURITY.md`](SECURITY.md)
 

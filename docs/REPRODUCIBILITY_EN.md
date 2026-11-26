@@ -13,7 +13,7 @@ This document describes how to **reproduce** what this repository publishes — 
 ## What this repository contains
 
 - **Public pulse**: `data/pulse/current.json` (the most recent beat of the system, with `provenance.sources` pointing to canonical databases).
-- **Published papers and evidence databases**: the evidence `.sqlite`/PDFs are **not** in the git repo — they live in the **GitHub release** and **Zenodo** (DOI `10.5281/zenodo.22647857`), with reported hashes/checksums.
+- **Published papers and evidence databases**: the final book pack (`PDF` + `MD` in PT and EN) lives in [`docs/zenodo_packs/livro_v242_rev2_20261126/`](zenodo_packs/livro_v242_rev2_20261126/), while the compressed unified evidence database (`unified_evidence_v3.tar.gz`, 74,587,004 bytes, SHA256 `c9ec7728b5ebc3eed399c984e59c1ffe56c54b8248464f45588c6fcbddf57c72`, containing `unified_evidence_v3.sqlite` with 62 tables / 883,164 rows, `sovereign_public_proof_registry.sqlite`, `reproduce_public_proofs.py`, `music_neural_dodecatiad_crossing_sanitized.sqlite`, and `dodecatiad_full_period_20260621_20261125_sanitized.parquet`) lives in the **GitHub/GitLab Release `v2.4.2-rev2`** and **Zenodo** (DOI `10.5281/zenodo.24548874` / Concept DOI `10.5281/zenodo.22647856`), plus the HuggingFace mirror (`fabricioslv/omnimind-dodecatiad-v3-evidence`).
 - **Reproducible core**: `kernel_base/omnimind_public_base.tar.gz` + `kernel_base/colab_public_base_triad.py` (compiles and tests 5 crates on Colab, no root, no required token).
 
 ## Reproduction steps (safe track)
