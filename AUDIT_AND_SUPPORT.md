@@ -26,4 +26,7 @@ This project is developed independently on a single **Lenovo IdeaPad Gaming 3 15
 - Local hardware maintenance / RAM & storage expansion for kernel & non-binary experiments;
 - Public dataset mirrors and reproducible CI benchmarks.
 
-See `.github/FUNDING.yml` or the repository Sponsor button on GitHub.
+See `.github/FUNDING.yml`, the repository Sponsor button on GitHub, or direct support channels:
+- **Ko-fi:** https://ko-fi.com/fahbrain_doxihewu
+- **Wise:** https://wise.com/pay/me/fabriciod1324
+- **Pix (Itaú):** `6975fc53-9057-422c-9f55-c4f6924f1fc7`
