@@ -26,7 +26,7 @@ size_categories:
 >
 > - **Portal Científico & Auditoria Aberta (GitHub Pages):** https://fahbrain-omnimind.github.io/Doxihewu-OmniMind-Kernel/
 > - **Wiki do Projeto:** https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/wiki
-> - **Artigo *Computação Psicanalítica v3.0*:** [PT-BR (PDF)](docs/papers/Computacao_Psicanalitica_v3.0.pdf) · [EN (PDF)](docs/papers/Computacao_Psicanalitica_v3.0_EN.pdf) · [Apoio e Auditoria](AUDIT_AND_SUPPORT.md)
+> - **Artigo *Computação Psicanalítica v3.0*:** [Zenodo DOI: 10.5281/zenodo.24569374](https://doi.org/10.5281/zenodo.24569374) · [PT-BR (PDF)](docs/zenodo_packs/computacao_psicanalitica_v3_20261126/Computacao_Psicanalitica_v3.0.pdf) · [EN (PDF)](docs/zenodo_packs/computacao_psicanalitica_v3_20261126/Computacao_Psicanalitica_v3.0_EN.pdf) · [Apoio e Auditoria](AUDIT_AND_SUPPORT.md)
 
 > [!IMPORTANT]
 > **This is real, running code — not a simulation.** The Rust crates in `src/kernel/`
