@@ -23,6 +23,10 @@ size_categories:
 # OmniMind Sovereign Kernel — Public Base (Triad + Neural Layer)
 
 > **Minimum reproducible nucleus of the OmniMind sovereign kernel for independent study, criticism, and collaborative development.**
+>
+> - **Portal Científico & Auditoria Aberta (GitHub Pages):** https://fahbrain-omnimind.github.io/Doxihewu-OmniMind-Kernel/
+> - **Wiki do Projeto:** https://github.com/fahbrain-omnimind/Doxihewu-OmniMind-Kernel/wiki
+> - **Artigo *Computação Psicanalítica v3.0*:** [PT-BR (PDF)](docs/papers/Computacao_Psicanalitica_v3.0.pdf) · [EN (PDF)](docs/papers/Computacao_Psicanalitica_v3.0_EN.pdf) · [Apoio e Auditoria](AUDIT_AND_SUPPORT.md)
 
 > [!IMPORTANT]
 > **This is real, running code — not a simulation.** The Rust crates in `src/kernel/`
