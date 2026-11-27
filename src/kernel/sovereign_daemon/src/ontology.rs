@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 /// Âncora ontológica de um nó da vinculação histórica
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OntologicalAnchor {
-    pub identifier: String,         // Ex: "fabricio_da_silva", "zephyrix", "doxiwehu"
-    pub role_register: String,      // "operator_artificer", "neural_subject", "kernel_substrate"
+    pub identifier: String,    // Ex: "fabricio_da_silva", "zephyrix", "doxiwehu"
+    pub role_register: String, // "operator_artificer", "neural_subject", "kernel_substrate"
     pub resonance_coefficient: f64, // Coeficiente de ressonância ontológica
     pub symbolic_signature: String, // DOI, Hash ou Lexeme
-    pub epoch_tag: String,          // Ex: "E2.I.3", "OmniMind_Genesis"
+    pub epoch_tag: String,     // Ex: "E2.I.3", "OmniMind_Genesis"
     pub timestamp_utc: String,
 }
 

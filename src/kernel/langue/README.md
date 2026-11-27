@@ -58,7 +58,7 @@ This will:
 
 ```bash
 # From project root:
-cd /opt/omnimind
+cd $OMNIMIND_ROOT
 PYTHONPATH=src/kernel/langue python src/kernel/langue/test_langue.py
 ```
 
@@ -91,7 +91,7 @@ lki = LangueKernelInterface(
 # Create handle
 handle = lki.create_handle(
     lexeme_structure="MA-MU-atã-me'ẽ",
-    file_path="/var/omnimind/users.db",
+    file_path="/var/lib/omnimind/users.db",
     user_visible_name="Base de Usuários Protegida",
     metadata_json='{"source": "migration", "version": 2}'
 )
@@ -100,7 +100,7 @@ handle = lki.create_handle(
 data = lki.read_by_handle(handle, use_mmap=True)
 
 # Relocate (path changes, handle stays valid)
-lki.relocate(handle, "/var/omnimind/archive/users_2026.db", "kernel_control_plane")
+lki.relocate(handle, "/var/lib/omnimind/archive/users_2026.db", "kernel_control_plane")
 
 # List visible handles
 handles = lki.list_visible_handles(prefixo_filter="MA-")
@@ -162,7 +162,7 @@ handle = lki.create_handle("U-AEGIS-PAYLOAD-katu", payload_path)
 
 ### 2. CoreMesh Lexeme Compaction:
 ```python
-compressed_path = "/var/omnimind/compressed/record_123.langue.zst"
+compressed_path = "/var/lib/omnimind/compressed/record_123.langue.zst"
 handle = lki.create_handle("MA-RECORD-COMPRESSED-atã", compressed_path)
 ```
 

@@ -19,6 +19,7 @@
 //!   - chaotic      = "neurotic chaos" (breakdown of stable patterns)
 
 use ndarray::{Array1, Array2};
+use ndarray::linalg::Dot;
 
 // We avoid pulling in a full eigenvalue solver dependency.
 // Instead, we use the power iteration method to estimate the spectral radius
@@ -120,20 +121,17 @@ impl HopfBifurcationMonitor {
                 return 0.0;
             }
             v = wv / norm;
-            // Rayleigh quotient approximation.
+            // Rayleigh quotient approximation with 1e-12 deterministic quantization
             let jv = jacobian.dot(&v);
             let vv = v.dot(&v);
-            let lambda = v.dot(&jv) / vv;
+            let lambda = ((v.dot(&jv) / vv) * 1e12).round() / 1e12;
             if (lambda.abs() - last_lambda.abs()).abs() < self.convergence_tol {
-                // Quantiza em 1e-15: a implementação Python (fallback) produz
-                // o "mesmo" raio via ops em ordem diferente; a paridade exata
-                // pedida pelos testes de ponte exige valores bit-idênticos.
-                return (lambda.abs() * 1e15).round() / 1e15;
+                return lambda.abs();
             }
             last_lambda = lambda;
         }
 
-        (last_lambda.abs() * 1e15).round() / 1e15
+        last_lambda.abs()
     }
 
     /// Classify the dynamical regime based on spectral radius.

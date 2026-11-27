@@ -43,6 +43,7 @@ fn round6(x: f64) -> f64 {
     temporal_delta,
     shear_tension,
     sources,
+    phi_operational_support_override = None,
 ))]
 pub fn build_temporal_internal_scale(
     py: Python,
@@ -61,8 +62,9 @@ pub fn build_temporal_internal_scale(
     topology_omega: f64,
     temporal_delta: f64,
     shear_tension: f64,
-    sources: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Py<PyAny>> {
+    sources: Option<&PyDict>,
+    phi_operational_support_override: Option<f64>,
+) -> PyResult<PyObject> {
     // ---------- Computações intermediárias ----------
     let multiplicity = clip01((betti_0 - 1.0).max(0.0) / 4.0);
     let sigma_state_anchor = clip01(sigma.max(sigma_operational_support));
@@ -124,8 +126,10 @@ pub fn build_temporal_internal_scale(
         "transitional"
     } else if phi_iit_normalized < 0.7 {
         "operative"
-    } else {
+    } else if phi_iit_normalized <= 1.0 {
         "high"
+    } else {
+        "transcendent"
     };
 
     // ---------- phi_trans_order, phi_silicon_order ----------
@@ -174,13 +178,30 @@ pub fn build_temporal_internal_scale(
     let phi_scale_regime: &str = phi_scale_stack.last().copied().unwrap_or("operative_local");
 
     // ---------- phi_operational_support ----------
-    let phi_silicon_for_support = phi_silicon_order.unwrap_or(0.0);
-    let phi_trans_for_support = phi_trans_order.unwrap_or(0.0);
-    let phi_operational_support = clip01(
-        (phi_iit_normalized * 0.20)
-            + (clip01(phi_silicon_for_support / 6.0) * 0.40)
-            + (clip01(phi_trans_for_support / 12.0) * 0.40),
-    );
+    // Material override from Python MaterialScaleTracker, or symmetric MaxEnt mean
+    // over declared domain bounds (PHI_CONTROL_SETPOINT_CEILING) — zero magic /6 or /12.
+    let phi_operational_support = if let Some(ov) = phi_operational_support_override {
+        clip01(ov)
+    } else {
+        let log10_ceil = crate::phi_constants::phi_control_log10_ceiling();
+        let mut active: Vec<f64> = Vec::with_capacity(3);
+        if phi_iit_normalized.is_finite() {
+            active.push(clip01(phi_iit_normalized));
+        }
+        if phi_iit_nats.is_finite() && phi_iit_nats > 0.0 {
+            active.push(clip01((1.0 + phi_iit_nats).log10() / log10_ceil));
+        }
+        if let Some(pt) = phi_transcendent {
+            if pt.is_finite() && pt > 0.0 {
+                active.push(clip01((1.0 + pt).log10() / log10_ceil));
+            }
+        }
+        if active.is_empty() {
+            0.0
+        } else {
+            clip01(active.iter().sum::<f64>() / (active.len() as f64))
+        }
+    };
 
     // ---------- crisis_pressure, recovery_capacity ----------
     let crisis_pressure = clip01(
@@ -189,11 +210,12 @@ pub fn build_temporal_internal_scale(
             + ((0.35 - sigma_state_anchor).max(0.0) / 0.35) * 0.25
             + temporal_delta * 0.15,
     );
+    let omega_safe = clip01(omega);
     let recovery_capacity = clip01(
         (phi_operational_support * 0.35)
             + (sigma_state_anchor * 0.25)
             + (psi.min(1.0) * 0.15)
-            + (omega * 0.10)
+            + (omega_safe * 0.10)
             + (gamma * 0.10)
             + ((1.0 - epsilon.min(1.0)) * 0.05),
     );
@@ -205,14 +227,24 @@ pub fn build_temporal_internal_scale(
     let phi_frameworks = PyDict::new(py);
     phi_frameworks.set_item("phi_iit_normalized", phi_iit_normalized)?;
     phi_frameworks.set_item("phi_iit_nats", phi_iit_nats)?;
-    phi_frameworks.set_item("phi_transcendent", phi_transcendent)?;
-    phi_frameworks.set_item("phi_transcendent_log10", phi_trans_order)?;
-    phi_frameworks.set_item("phi_silicon_log10", phi_silicon_order)?;
-    phi_frameworks.set_item("phi_reference_log10", phi_reference_order)?;
+    phi_frameworks.set_item("phi_transcendent", phi_transcendent.into_py(py))?;
+    phi_frameworks.set_item("phi_transcendent_log10", phi_trans_order.into_py(py))?;
+    phi_frameworks.set_item("phi_silicon_log10", phi_silicon_order.into_py(py))?;
+    phi_frameworks.set_item("phi_reference_log10", phi_reference_order.into_py(py))?;
+    let phi_support_band: &'static str = if phi_operational_support < 0.15 {
+        "critical_low"
+    } else if phi_operational_support < 0.35 {
+        "transitional"
+    } else if phi_operational_support < 0.7 {
+        "operative"
+    } else {
+        "high"
+    };
     phi_frameworks.set_item("phi_iit_band", phi_iit_band)?;
+    phi_frameworks.set_item("phi_support_band", phi_support_band)?;
     phi_frameworks.set_item("phi_scale_regime", phi_scale_regime)?;
 
-    let stack_list = PyList::new(py, &phi_scale_stack)?;
+    let stack_list = PyList::new(py, &phi_scale_stack);
     phi_frameworks.set_item("phi_scale_stack", stack_list)?;
 
     let flags_dict = PyDict::new(py);
@@ -228,7 +260,7 @@ pub fn build_temporal_internal_scale(
     result.set_item("sigma_operational_state", sigma_operational_state)?;
     result.set_item("topology_organization_state", topology_organization_state)?;
 
-    let neutral_list = PyList::new(py, &neutral_axes)?;
+    let neutral_list = PyList::new(py, &neutral_axes);
     result.set_item("neutral_axes", neutral_list)?;
     result.set_item("neutral_axes_count", neutral_axes_count)?;
     result.set_item("fragmentation_index", multiplicity)?;
@@ -248,12 +280,12 @@ pub fn build_temporal_internal_scale(
 
     // sources passado como dict opcional
     if let Some(src) = sources {
-        result.set_item("sources", src.clone())?;
+        result.set_item("sources", src)?;
     } else {
         result.set_item("sources", PyDict::new(py))?;
     }
 
-    Ok(result.unbind().into())
+    Ok(result.into())
 }
 
 #[cfg(test)]

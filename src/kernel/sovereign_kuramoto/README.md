@@ -1,7 +1,7 @@
 # omnimind-sovereign-kuramoto
 
 > Sovereign Kuramoto Solver + Psychoanalytic LIF + Hopf Bifurcation Monitor — implementação OmniMind-nativa (clean-room, AGPL-free).
-> Licença: Apache-2.0.
+> Licença: CC-BY-NC-ND-4.0.
 
 ## Finalidade
 

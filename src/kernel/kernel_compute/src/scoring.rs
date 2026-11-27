@@ -57,23 +57,26 @@ pub fn score_live_writer_snapshot(
     has_sigma_source: bool,
     writer_role: &str,
 ) -> f64 {
-    // === phi_operational_support (com fallback log10) ===
+    // === phi_operational_support (symmetric MaxEnt domain-normalized fallback) ===
     let phi_operational_support: f64 = if phi_operational_support_input > 0.0 {
         phi_operational_support_input
     } else {
-        let mut phi_silicon_support: f64 = 0.0;
-        if phi_iit_nats > 0.0 {
-            // FIX ESCALA (2026-07-21): divisor 100.0
-            let log_val = (phi_iit_nats.max(1.0)).log10() / 100.0;
-            phi_silicon_support += log_val.clamp(0.0, 1.0) * 0.55;
+        let log10_ceil = crate::phi_constants::phi_control_log10_ceiling();
+        let mut active: Vec<f64> = Vec::with_capacity(3);
+        if phi_iit.is_finite() && phi_iit > 0.0 {
+            active.push(phi_iit.clamp(0.0, 1.0));
         }
-        if phi_trans > 0.0 {
-            let log_val = (phi_trans.max(1.0)).log10() / 12.0;
-            phi_silicon_support += log_val.clamp(0.0, 1.0) * 0.45;
+        if phi_iit_nats.is_finite() && phi_iit_nats > 0.0 {
+            active.push(((1.0 + phi_iit_nats).log10() / log10_ceil).clamp(0.0, 1.0));
         }
-        let silicon_clamped = phi_silicon_support.clamp(0.0, 1.0);
-        let phi_iit_clamped = phi_iit.clamp(0.0, 1.0);
-        silicon_clamped.max(phi_iit_clamped)
+        if phi_trans.is_finite() && phi_trans > 0.0 {
+            active.push(((1.0 + phi_trans).log10() / log10_ceil).clamp(0.0, 1.0));
+        }
+        if active.is_empty() {
+            0.0
+        } else {
+            (active.iter().sum::<f64>() / (active.len() as f64)).clamp(0.0, 1.0)
+        }
     };
 
     // === Richness ===
@@ -136,13 +139,17 @@ pub fn score_live_writer_snapshot(
     };
 
     // === Final score ===
-    
-
-    phi_operational_support.clamp(0.0, 1.0) * 0.18
+    // Onda 3A (R1-A11): clamp recovery to [0, 1] consistently and normalize the 5 base
+    // health weights (sum = 0.96 -> 1.0) while preserving relative weight ratios.
+    const BASE_HEALTH_WEIGHT_SUM: f64 = 0.96;
+    let base_health = (phi_operational_support.clamp(0.0, 1.0) * 0.18
         + sigma.clamp(0.0, 1.0) * 0.22
         + maat.clamp(0.0, 1.0) * 0.16
-        + recovery * 0.26
-        + (1.0 - crisis.clamp(0.0, 1.0)) * 0.14
+        + recovery.clamp(0.0, 1.0) * 0.26
+        + (1.0 - crisis.clamp(0.0, 1.0)) * 0.14)
+        / BASE_HEALTH_WEIGHT_SUM;
+
+    base_health
         + richness
         - (default_axes as f64) * 0.03
         + role_bias
@@ -218,15 +225,83 @@ mod tests {
             100.0, 0.8, 0.2, 0.5,
             true, true, true, true, "auxiliary_writer",
         );
-        // Diferença = (0.5-0.01)*0.16 (maat contribution) + 0.14 (penalty)
-        // = 0.49*0.16 + 0.14 = 0.0784 + 0.14 = 0.2184
-        let expected_diff = (0.5_f64 - 0.01) * 0.16 + 0.14;
+        // Diferença = (0.5-0.01)*(0.16/0.96) (maat contribution) + 0.14 (penalty)
+        let expected_diff = (0.5_f64 - 0.01) * (0.16 / 0.96) + 0.14;
         assert!((good_maat - bad_maat - expected_diff).abs() < 1e-15);
     }
 
     #[test]
+    fn test_recovery_clamped_and_base_weights_sum_to_one() {
+        let clamped = score_live_writer_snapshot(
+            0.5, 0.5, 0.5, 0.6, 0.1,
+            1.0,  // maat
+            0.0, 0.0, 0.0,
+            100.0, // age_s -> +0.14 freshness
+            1.5,   // recovery > 1.0 should clamp to 1.0
+            0.0,   // crisis = 0.0 -> inv_crisis = 1.0
+            1.0,   // phi_operational_support = 1.0
+            true, true, true, true, // richness = 0.44
+            "auxiliary_writer",
+        );
+        let at_one = score_live_writer_snapshot(
+            0.5, 0.5, 0.5, 0.6, 0.1,
+            1.0,
+            0.0, 0.0, 0.0,
+            100.0,
+            1.0,
+            0.0,
+            1.0,
+            true, true, true, true,
+            "auxiliary_writer",
+        );
+        assert!((clamped - at_one).abs() < 1e-15);
+
+        let negative_clamped = score_live_writer_snapshot(
+            0.5, 0.5, 0.5, 0.6, 0.1,
+            0.0, 0.0, 0.0, 0.0,
+            100.0,
+            -0.5, // recovery < 0.0 should clamp to 0.0
+            1.0,
+            0.0,
+            false, false, false, false,
+            "auxiliary_writer",
+        );
+        let at_zero = score_live_writer_snapshot(
+            0.5, 0.5, 0.5, 0.6, 0.1,
+            0.0, 0.0, 0.0, 0.0,
+            100.0,
+            0.0,
+            1.0,
+            0.0,
+            false, false, false, false,
+            "auxiliary_writer",
+        );
+        assert!((negative_clamped - at_zero).abs() < 1e-15);
+        // If sigma = 1.0 and phi = 1.0 and maat = 1.0 and recovery = 1.0 and crisis = 0.0:
+        // base_health == 1.0 exactly (weights sum to 1.0 after / 0.96).
+        let max_base = score_live_writer_snapshot(
+            1.0, 0.5, 0.5, 0.6, 0.1,
+            1.0, 0.0, 0.0, 0.0,
+            2000.0, // age_s in (900, 3600] -> +0.02 freshness, -0.35 freshness_penalty
+            1.0, 0.0, 1.0,
+            false, false, false, false, "auxiliary_writer",
+        );
+        // base_health = 1.0, default_axes = 4 -> -0.12, freshness = +0.02 - 0.35
+        let expected = 1.0 - 4.0 * 0.03 + 0.02 - min_penalty_check(2000.0);
+        assert!((max_base - expected).abs() < 1e-14);
+    }
+
+    fn min_penalty_check(age_s: f64) -> f64 {
+        if age_s > 480.0 {
+            (((age_s - 480.0) / 480.0) * 0.18).min(0.35)
+        } else {
+            0.0
+        }
+    }
+
+    #[test]
     fn test_phi_silicon_fallback() {
-        // phi_operational_support_input = 0.0 → usa log10 fallback
+        // phi_operational_support_input = 0.0 → symmetric MaxEnt domain-normalized fallback
         let score = score_live_writer_snapshot(
             0.5, 0.5, 0.5, 0.6, 0.1, 0.3,
             0.0, 1e6, 0.0,  // phi_iit=0, phi_iit_nats=1e6
@@ -234,9 +309,6 @@ mod tests {
             0.0,  // phi_operational_support = 0 → fallback
             false, false, false, false, "auxiliary_writer",
         );
-        // phi_silicon_support = log10(1e6)/100 * 0.55 = 6/100 * 0.55 = 0.033
-        // phi_operational_support = max(0.033, 0.0) = 0.033
-        // This should contribute 0.033 * 0.18 ≈ 0.006 to the score
         assert!(score > 0.0);
     }
 }

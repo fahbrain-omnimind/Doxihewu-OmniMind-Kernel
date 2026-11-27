@@ -57,10 +57,12 @@ pub fn compute_sigma_operational_support(
     last_sigma: f64,
 ) -> f64 {
     let continuity_depth_clamped = clip01(continuity_depth);
-    // FIX ESCALA (2026-08-28): divisor era 6.0, deve ser 100.0 para match Python.
-    // Python (integration_loop.py): np.clip(math.log10(max(phi_raw_nats, 1.0)) / 100.0, 0.0, 1.0)
-    // Com 6.0: phi_raw_nats=1e6 → 1.0 (clipado); com 100.0: → 0.06 (correto)
-    let phi_silicon_support = clip01(phi_raw_nats.max(1.0).log10() / 100.0);
+    let log10_ceil = crate::phi_constants::phi_control_log10_ceiling();
+    let phi_silicon_support = if phi_raw_nats.is_finite() && phi_raw_nats > 0.0 {
+        clip01((1.0 + phi_raw_nats).log10() / log10_ceil)
+    } else {
+        0.0
+    };
     let multiplicity_inverse = clip01(1.0 / betti_0.max(1.0));
     let last_sigma_clamped = clip01(last_sigma);
     let sigma_topology_clamped = clip01(sigma_topology_proxy);

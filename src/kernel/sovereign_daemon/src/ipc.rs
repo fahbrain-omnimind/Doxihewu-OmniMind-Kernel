@@ -76,11 +76,13 @@ pub fn fetch_state() -> IpcState {
         Ok(v) => v,
         Err(_) => return out,
     };
-    out.ok = true;
+    let state = v.get("state").cloned().unwrap_or(Value::Null);
+    let state_non_empty = state.as_object().map(|m| !m.is_empty()).unwrap_or(false);
+    out.ok = state_non_empty;
     out.cycle = v["cycle"].as_u64().unwrap_or(0);
     out.integration_cycle = v["integration_cycle"].as_u64().unwrap_or(0);
     out.timestamp = v["timestamp"].as_f64().unwrap_or(0.0);
-    out.state = v.get("state").cloned().unwrap_or(Value::Null);
+    out.state = state;
     out.clamped_fields = v.get("clamped_fields").cloned().unwrap_or(Value::Null);
     out
 }

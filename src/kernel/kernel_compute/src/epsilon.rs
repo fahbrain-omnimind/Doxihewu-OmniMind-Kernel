@@ -52,6 +52,7 @@ fn clip(x: f64, lo: f64, hi: f64) -> f64 {
     temporal_delta,
     shear_tension,
     betti_0,
+    phi_operational_support_override = None,
 ))]
 pub fn compute_epsilon_axes(
     py: Python,
@@ -73,7 +74,8 @@ pub fn compute_epsilon_axes(
     temporal_delta: f64,
     shear_tension: f64,
     betti_0: f64,
-) -> PyResult<Py<PyAny>> {
+    phi_operational_support_override: Option<f64>,
+) -> PyResult<PyObject> {
     // ---------- Inputs sanitização ----------
     let last_epsilon = clip01(last_epsilon);
     let topology_sigma = clip01(topology_sigma);
@@ -85,15 +87,33 @@ pub fn compute_epsilon_axes(
     let somatic_heat = clip01(somatic_heat);
 
     // ---------- phi_operational_support ----------
-    // FIX ESCALA (2026-08-28): divisor era 6.0, deve ser 100.0 para match Python.
-    // Python (integration_loop.py:5618): min(1.0, max(0.0, log10(max(phi_raw_nats,1.0)) / 100.0)) * 0.40
-    // Com 6.0: phi_raw_nats=1e6 → 1.0 (clipado); com 100.0: → 0.06 (correto)
-    let phi_silicon_log = phi_raw_nats.max(1.0).log10() / 100.0;
-    let phi_operational_support = clip01(
-        (phi_iit_normalized * 0.30)
-            + (phi_trans_support * 0.30)
-            + clip01(phi_silicon_log) * 0.40,
-    );
+    // Material override from Python MaterialScaleTracker, or symmetric MaxEnt mean
+    // over declared domain bounds (PHI_CONTROL_SETPOINT_CEILING) — zero magic /100.0 or weights.
+    let log10_ceil = crate::phi_constants::phi_control_log10_ceiling();
+    let phi_silicon_log = if phi_raw_nats.is_finite() && phi_raw_nats > 0.0 {
+        clip01((1.0 + phi_raw_nats).log10() / log10_ceil)
+    } else {
+        0.0
+    };
+    let phi_operational_support = if let Some(ov) = phi_operational_support_override {
+        clip01(ov)
+    } else {
+        let mut active: Vec<f64> = Vec::with_capacity(3);
+        if phi_iit_normalized.is_finite() {
+            active.push(clip01(phi_iit_normalized));
+        }
+        if phi_raw_nats.is_finite() && phi_raw_nats > 0.0 {
+            active.push(phi_silicon_log);
+        }
+        if phi_trans_support.is_finite() && phi_trans_support > 0.0 {
+            active.push(clip01(phi_trans_support));
+        }
+        if active.is_empty() {
+            0.0
+        } else {
+            clip01(active.iter().sum::<f64>() / (active.len() as f64))
+        }
+    };
 
     // ---------- novelty_drive ----------
     let novelty_drive = clip01(
@@ -104,6 +124,8 @@ pub fn compute_epsilon_axes(
             + (shear_tension * 0.10),
     );
 
+    let omega_safe = clip01(omega);
+
     // ---------- resistance_drive ----------
     let resistance_drive = clip01(
         (fragmentation * 0.30)
@@ -111,7 +133,7 @@ pub fn compute_epsilon_axes(
             + ((topology_omega - topology_sigma).abs() * 0.15)
             + ((0.40 - sigma).max(0.0) / 0.40) * 0.15
             + (somatic_heat * 0.10)
-            + ((1.0 - omega) * 0.10),
+            + ((1.0 - omega_safe) * 0.10),
     );
 
     // ---------- epsilon_floor ----------
@@ -126,7 +148,7 @@ pub fn compute_epsilon_axes(
         (phi_operational_support * 0.35)
             + (psi.min(1.0) * 0.15)
             + (sigma * 0.15)
-            + (omega * 0.10)
+            + (omega_safe * 0.10)
             + (continuity_depth * 0.15)
             + ((1.0 - resistance_drive) * 0.10),
         0.0,
@@ -250,7 +272,7 @@ pub fn compute_epsilon_axes(
     debug.set_item("desire_engine_mode", desire_engine_mode)?;
 
     result.set_item("epsilon_debug", debug)?;
-    Ok(result.unbind().into())
+    Ok(result.into())
 }
 
 #[cfg(test)]

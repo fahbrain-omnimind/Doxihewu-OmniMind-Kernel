@@ -16,10 +16,25 @@ use pyo3::prelude::*;
 const PHI_THRESHOLD: f64 = 0.01;
 const PHI_OPTIMAL: f64 = 0.06;
 const SIGMA_PHI: f64 = 0.015;
-const PHI_STARK_TARGET: f64 = 77448.0;
-const PHI_NATS_ABSOLUTE_CEILING: f64 = PHI_STARK_TARGET * 10.0; // 774480
+pub const PHI_CONTROL_SETPOINT_CEILING: f64 = 774480.0;
+pub const PHI_NATS_ABSOLUTE_CEILING: f64 = PHI_CONTROL_SETPOINT_CEILING;
 const PHI_RANGE_NATS_MIN: f64 = 0.0;
 const PHI_RANGE_NATS_MAX: f64 = 15.0;
+
+#[inline(always)]
+pub fn phi_control_log10_ceiling() -> f64 {
+    (1.0 + PHI_CONTROL_SETPOINT_CEILING).log10()
+}
+
+#[pyfunction]
+pub fn get_phi_control_setpoint_ceiling() -> f64 {
+    PHI_CONTROL_SETPOINT_CEILING
+}
+
+#[pyfunction]
+pub fn get_phi_control_log10_ceiling() -> f64 {
+    phi_control_log10_ceiling()
+}
 
 #[inline(always)]
 fn is_finite(x: f64) -> bool {
@@ -115,27 +130,34 @@ pub fn denormalize_phi(phi_norm: f64) -> f64 {
 ///   Componente gaussiano de Ψ [0, 1]
 #[pyfunction]
 pub fn calculate_psi_gaussian(phi_raw: f64) -> f64 {
-    if SIGMA_PHI <= 0.0 {
+    if SIGMA_PHI <= 0.0 || !phi_raw.is_finite() {
         return 0.5; // Fallback neutro
     }
 
-    let exponent: f64 = if phi_raw > 1.0 {
-        // Escala logarítmica para transcendência
+    let lin_val = {
+        let diff = (phi_raw - PHI_OPTIMAL) / SIGMA_PHI;
+        (-0.5 * diff * diff).exp().clamp(0.0, 1.0)
+    };
+    if phi_raw <= 0.15 {
+        return lin_val;
+    }
+
+    let log_val = {
         let phi_log = phi_raw.max(1e-30).log10();
-        // PHI_OPTIMAL em log10: log10(0.06) ≈ -1.22
         let phi_optimal_log = PHI_OPTIMAL.max(1e-30).log10();
-        // SIGMA_PHI em log10: escala relativa (1 ordem de magnitude = 1.0)
         let sigma_log = 2.0; // 2 ordens de magnitude de tolerância
         let diff = (phi_log - phi_optimal_log) / sigma_log;
-        -0.5 * diff * diff
-    } else {
-        // Escala linear para valores normais (phi_raw < 1.0)
-        let diff = (phi_raw - PHI_OPTIMAL) / SIGMA_PHI;
-        -0.5 * diff * diff
+        (-0.5 * diff * diff).exp().clamp(0.0, 1.0)
     };
+    if phi_raw >= 1.0 {
+        return log_val;
+    }
 
-    let psi_gaussian = exponent.exp();
-    psi_gaussian.clamp(0.0, 1.0)
+    // C1 cubic Hermite smoothstep blend on (0.15, 1.0) removes the step discontinuity
+    // at 1.0 while keeping [0, 0.15] (incl. 0.06 -> 1.0) and [1.0, inf) invariants exact.
+    let t = (phi_raw - 0.15) / 0.85;
+    let s = t * t * (3.0 - 2.0 * t);
+    (lin_val * (1.0 - s) + log_val * s).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -242,5 +264,15 @@ mod tests {
         let phi_norm = normalize_phi(phi_raw);
         let phi_back = denormalize_phi(phi_norm);
         assert!((phi_back - phi_raw).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_psi_gaussian_continuous_at_one_and_nan() {
+        let left = calculate_psi_gaussian(1.0 - 1e-6);
+        let at_one = calculate_psi_gaussian(1.0);
+        let right = calculate_psi_gaussian(1.0 + 1e-6);
+        assert!((left - at_one).abs() < 1e-6, "left={left}, at_one={at_one}");
+        assert!((right - at_one).abs() < 1e-6, "right={right}, at_one={at_one}");
+        assert!((calculate_psi_gaussian(f64::NAN) - 0.5).abs() < 1e-15);
     }
 }

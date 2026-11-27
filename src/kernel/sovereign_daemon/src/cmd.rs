@@ -44,12 +44,16 @@ pub struct CmdAck {
 }
 
 fn config_dir() -> PathBuf {
-    let p = std::env::var("OMNIMIND_CONFIG_DIR")
+    if let Ok(override_dir) = std::env::var("OMNIMIND_CONFIG_DIR") {
+        let trimmed = override_dir.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    std::env::var("HOME")
         .map(PathBuf::from)
-        .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".config/omnimind")))
-        .unwrap_or_else(|_| PathBuf::from("/opt/omnimind/config"));
-    let _ = std::fs::create_dir_all(&p);
-    p
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".config/omnimind")
 }
 
 /// CLOCK_MONOTONIC em segundos — mesma base de time.monotonic() do Python.
@@ -66,7 +70,10 @@ fn hmac_keys() -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     for name in ["ipc_cmd_key.current", "ipc_cmd_key.next"] {
         if let Ok(k) = std::fs::read(config_dir().join(name)) {
-            let k: Vec<u8> = k.into_iter().take_while(|b| !b.is_ascii_whitespace()).collect();
+            let k: Vec<u8> = k
+                .into_iter()
+                .take_while(|b| !b.is_ascii_whitespace())
+                .collect();
             if !k.is_empty() {
                 out.push(k);
             }
@@ -82,8 +89,7 @@ fn sign(id: &str, op: &str, canonical_args: &str, ts: f64) -> String {
         return String::new();
     };
     let msg = format!("{id}|{op}|{canonical_args}|{ts}");
-    let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(&key).unwrap_or_else(|_| unreachable!());
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&key).unwrap_or_else(|_| unreachable!());
     mac.update(msg.as_bytes());
     let tag = mac.finalize().into_bytes();
     tag.iter().map(|b| format!("{b:02x}")).collect()
@@ -97,9 +103,7 @@ fn canonical_args(args: &Value) -> String {
             Value::Null => out.push_str("null"),
             Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             Value::Number(n) => out.push_str(&n.to_string()),
-            Value::String(s) => {
-                out.push_str(&serde_json::to_string(s).unwrap_or_default())
-            }
+            Value::String(s) => out.push_str(&serde_json::to_string(s).unwrap_or_default()),
             Value::Array(a) => {
                 out.push('[');
                 for (i, item) in a.iter().enumerate() {
@@ -254,8 +258,7 @@ pub fn outbox_drain() -> usize {
             let _ = c.execute("DELETE FROM outbox WHERE id=?", [&id]);
             sent += 1;
         } else {
-            let _ = c.execute(
-                "UPDATE outbox SET attempts=attempts+1 WHERE id=?", [&id]);
+            let _ = c.execute("UPDATE outbox SET attempts=attempts+1 WHERE id=?", [&id]);
             break; // socket ainda caido — não gasta ciclo
         }
     }
@@ -290,7 +293,9 @@ fn lease_conn() -> Option<Connection> {
 
 pub fn lease_epoch() -> Option<i64> {
     lease_conn()?
-        .query_row("SELECT epoch FROM governor_lease WHERE id=1", [], |r| r.get(0))
+        .query_row("SELECT epoch FROM governor_lease WHERE id=1", [], |r| {
+            r.get(0)
+        })
         .ok()
 }
 
@@ -395,13 +400,12 @@ mod tests {
 
     #[test]
     fn live_handshake_and_status() {
-        if UnixStream::connect(CMD_SOCKET).is_err() {
-            eprintln!("executor dormente em {CMD_SOCKET} — live handshake skipping");
-            return;
-        }
         let hs = handshake().expect("executor deve responder handshake");
         assert_eq!(hs["kind"].as_str(), Some("handshake_ack"));
-        assert!(hs["supported_ops"].as_array().map(|a| !a.is_empty()).unwrap_or(false));
+        assert!(hs["supported_ops"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false));
         let ack = send_command("governor.status", json!({}));
         assert_eq!(ack.status, "ok");
     }
@@ -411,7 +415,7 @@ mod tests {
         // GUARD (2026-10-09): este teste envia unit.restart real ao executor.
         // Só é exercitável quando o socket NÃO existe (executor dormente).
         // Com daemon vivo ele disparou um restart real do omnimind-backend
-        // em produção durante  (ack_timeout ≠ comando ignorado).
+        // em produção durante `cargo test` (ack_timeout ≠ comando ignorado).
         if UnixStream::connect(CMD_SOCKET).is_ok() {
             eprintln!("executor vivo em {CMD_SOCKET} — dormant path não exercitável, skipping");
             return;
@@ -420,8 +424,11 @@ mod tests {
             "unit.restart",
             json!({"unit": "omnimind-backend", "scope": "system"}),
         );
-        assert!(matches!(ack.status.as_str(), "deferred" | "rejected" | "unknown"),
-                "dormant executor deve recusar/deferir: {:?}", ack);
+        assert!(
+            matches!(ack.status.as_str(), "deferred" | "rejected" | "unknown"),
+            "dormant executor deve recusar/deferir: {:?}",
+            ack
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// See LICENSE for additional ethical restrictions (non-military, non-governmental, no derivatives).
+// See LICENSE for additional Licensed under the Apache License, Version 2.0.
 #![allow(clippy::type_complexity)]
 //
 // omnimind-somatic-daemon v0.2.0 — A-4 Fase 1 (Shadow Mode)
@@ -63,6 +63,7 @@ struct Config {
     shadow_mesh_md: PathBuf,
     log_file: PathBuf,
     storage_oracle_path: PathBuf,
+    host_sensors_json: PathBuf,
 }
 
 impl Config {
@@ -107,6 +108,10 @@ impl Config {
             shadow_mesh_md: project_root.join("reports_runtime/somatic_mesh_runtime_rust_shadow_latest.md"),
             log_file: data_somatic.join("somatic_daemon_rust_shadow.log"),
             storage_oracle_path: project_root.join("runtime_config/storage_mount_health_oracle_latest.json"),
+            host_sensors_json: PathBuf::from(
+                env::var("OMNIMIND_RUST_SENSORS_PATH")
+                    .unwrap_or_else(|_| "/run/omnimind/somatic_host_sensors_latest.json".to_string()),
+            ),
         }
     }
 }
@@ -244,9 +249,46 @@ fn read_meminfo() -> (f64, f64) {
     (mem_available_gb, swap_used_ratio)
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[repr(C)]
+struct LinuxStatvfs {
+    f_bsize: u64,
+    f_frsize: u64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+    f_favail: u64,
+    f_fsid: u64,
+    f_flag: u64,
+    f_namemax: u64,
+    __f_spare: [i32; 6],
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+extern "C" {
+    fn statvfs(path: *const std::os::raw::c_char, buf: *mut LinuxStatvfs) -> i32;
+}
+
 fn read_disk_usage() -> (f64, f64, f64) {
-    // Returns (root_used_pct, home_used_pct, var_used_pct)
+    // Returns (root_used_pct, home_used_pct, var_used_pct) via POSIX statvfs (no df fork).
     fn disk_used_pct(mount: &str) -> f64 {
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        {
+            if let Ok(c_path) = std::ffi::CString::new(mount) {
+                let mut buf = std::mem::MaybeUninit::<LinuxStatvfs>::zeroed();
+                let rc = unsafe { statvfs(c_path.as_ptr(), buf.as_mut_ptr()) };
+                if rc == 0 {
+                    let st = unsafe { buf.assume_init() };
+                    let used = st.f_blocks.saturating_sub(st.f_bfree);
+                    let non_root_total = used.saturating_add(st.f_bavail);
+                    if non_root_total > 0 {
+                        return (used as f64 / non_root_total as f64) * 100.0;
+                    }
+                }
+            }
+        }
         let output = process::Command::new("df")
             .args(["-h", "--output=pcent", mount])
             .output()
@@ -262,6 +304,52 @@ fn read_disk_usage() -> (f64, f64, f64) {
         0.0
     }
     (disk_used_pct("/"), disk_used_pct("/home"), disk_used_pct("/var"))
+}
+
+fn read_psi_some_avg10(kind: &str) -> f64 {
+    let path = format!("/proc/pressure/{}", kind);
+    let content = fs::read_to_string(path).unwrap_or_default();
+    for line in content.lines() {
+        if line.starts_with("some") {
+            for token in line.split_whitespace() {
+                if let Some(val) = token.strip_prefix("avg10=") {
+                    if let Ok(parsed) = val.parse::<f64>() {
+                        return parsed;
+                    }
+                }
+            }
+        }
+    }
+    0.0
+}
+
+fn write_host_sensors_snapshot(
+    cfg: &Config,
+    cpu_usage_pct: f64,
+    metrics: &SomaticMetrics,
+) {
+    let payload = json!({
+        "schema_version": 1,
+        "source": "somatic_daemon_rust",
+        "timestamp_utc": Utc::now().to_rfc3339(),
+        "cpu_temp_c": (metrics.temperature * 100.0).round() / 100.0,
+        "cpu_usage_pct": (cpu_usage_pct * 100.0).round() / 100.0,
+        "mem_available_gb": (metrics.mem_available_gb * 1000.0).round() / 1000.0,
+        "swap_used_ratio": (metrics.swap_used_ratio * 10000.0).round() / 10000.0,
+        "root_used_pct": (metrics.root_used_pct * 100.0).round() / 100.0,
+        "home_used_pct": (metrics.home_used_pct * 100.0).round() / 100.0,
+        "var_used_pct": (metrics.var_used_pct * 100.0).round() / 100.0,
+        "psi_cpu_some_avg10": read_psi_some_avg10("cpu"),
+        "psi_mem_some_avg10": read_psi_some_avg10("memory"),
+        "psi_io_some_avg10": read_psi_some_avg10("io"),
+    });
+    if let Some(parent) = cfg.host_sensors_json.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let tmp_path = cfg.host_sensors_json.with_extension("json.tmp");
+    if fs::write(&tmp_path, payload.to_string()).is_ok() {
+        let _ = fs::rename(&tmp_path, &cfg.host_sensors_json);
+    }
 }
 
 fn read_cpu_temp() -> f64 {
@@ -328,6 +416,43 @@ fn read_cpu_usage_pct() -> f64 {
     }
 }
 
+fn discover_cpu_tjmax_c() -> f64 {
+    let mut best_crit: Option<f64> = None;
+    if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
+        for entry in entries.flatten() {
+            let hw = entry.path();
+            let name = fs::read_to_string(hw.join("name"))
+                .unwrap_or_default()
+                .trim()
+                .to_lowercase();
+            if !matches!(name.as_str(), "coretemp" | "k10temp" | "zenpower" | "cpu_thermal") {
+                continue;
+            }
+            if let Ok(files) = fs::read_dir(&hw) {
+                for file in files.flatten() {
+                    let fname = file.file_name().to_string_lossy().to_string();
+                    if fname.starts_with("temp") && (fname.ends_with("_crit") || fname.ends_with("_max")) {
+                        if let Ok(raw) = fs::read_to_string(file.path()) {
+                            if let Ok(mut v) = raw.trim().parse::<f64>() {
+                                if v > 1000.0 {
+                                    v /= 1000.0;
+                                }
+                                if (70.0..=125.0).contains(&v) {
+                                    best_crit = Some(match best_crit {
+                                        Some(prev) => prev.min(v),
+                                        None => v,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    best_crit.unwrap_or(100.0)
+}
+
 /// Calculate somatic state matching Python somatic_cell.py logic:
 /// - energy_level = (memory_available + cpu_available) / 2
 /// - pain_signals: sobreaquecimento, exaustão, erro_crítico
@@ -338,10 +463,12 @@ fn calculate_somatic_state(cpu_temp: f64, mem_available_gb: f64, cpu_usage_pct: 
     let mem_available_pct = ((mem_available_gb / mem_total_gb) * 100.0).clamp(0.0, 100.0);
     let cpu_available_pct = 100.0 - cpu_usage_pct;
     let energy_level = (mem_available_pct + cpu_available_pct) / 2.0;
+    let tjmax_c = discover_cpu_tjmax_c();
+    let yellow_c = tjmax_c - 5.0;
 
-    // Pain signals (matching Python thresholds)
+    // Pain signals (hardware-relative thresholds: Tjmax - 5°C)
     let mut pain_signals = Vec::new();
-    if cpu_temp > 85.0 {
+    if cpu_temp >= yellow_c {
         pain_signals.push("sobreaquecimento".to_string());
     }
     if energy_level < 20.0 {
@@ -353,7 +480,7 @@ fn calculate_somatic_state(cpu_temp: f64, mem_available_gb: f64, cpu_usage_pct: 
     if energy_level > 80.0 {
         pleasure_signals.push("vitalidade".to_string());
     }
-    if cpu_temp > 30.0 && cpu_temp < 70.0 {
+    if cpu_temp > 30.0 && cpu_temp < (tjmax_c - 20.0) {
         pleasure_signals.push("temperatura_ideal".to_string());
     }
 
@@ -996,6 +1123,7 @@ fn main() {
         Err(e) => log(&cfg, &format!("Erro snapshot ativação: {}", e)),
     }
     write_shadow_state(&cfg, "activated", 0, &init_metrics);
+    write_host_sensors_snapshot(&cfg, cpu_usage, &init_metrics);
     materialize_shadow_exports(&cfg);
     log(&cfg, "Daemon shadow ativado");
 
@@ -1028,6 +1156,7 @@ fn main() {
             oracle: oracle.clone(),
         };
 
+        write_host_sensors_snapshot(&cfg, cpu_usage, &metrics);
         cycle_count += 1;
 
         // Log a cada 10 ciclos (matching Python L199-209)
@@ -1157,7 +1286,8 @@ mod tests {
 
     #[test]
     fn somatic_state_overheating_pain() {
-        let (_, pain, _) = calculate_somatic_state(90.0, 30.0, 10.0);
+        let hot_c = discover_cpu_tjmax_c() - 4.0;
+        let (_, pain, _) = calculate_somatic_state(hot_c, 30.0, 10.0);
         assert!(pain.contains(&"sobreaquecimento".to_string()));
     }
 
@@ -1184,5 +1314,42 @@ mod tests {
         assert!(cfg.db_path.ends_with("somatic_mesh_runtime.sqlite"));
         assert!(cfg.shadow_state_file.ends_with("daemon_state_rust_shadow.json"));
         assert!(cfg.min_sleep < cfg.cycle_interval);
+    }
+
+    #[test]
+    fn read_disk_usage_uses_statvfs_bounds() {
+        let (root_pct, home_pct, var_pct) = read_disk_usage();
+        assert!(root_pct > 0.0 && root_pct <= 100.0);
+        assert!(home_pct >= 0.0 && home_pct <= 100.0);
+        assert!(var_pct >= 0.0 && var_pct <= 100.0);
+    }
+
+    #[test]
+    fn write_host_sensors_snapshot_creates_valid_json() {
+        let mut cfg = Config::from_env();
+        let tmp_path = std::env::temp_dir().join(format!("somatic_host_sensors_test_{}.json", gen_uuid()));
+        cfg.host_sensors_json = tmp_path.clone();
+        let metrics = SomaticMetrics {
+            phi_estimate: 0.0,
+            temperature: 55.5,
+            energy: 82.0,
+            resonance: 0.0,
+            pain_signals: vec![],
+            pleasure_signals: vec!["temperatura_ideal".to_string()],
+            mem_available_gb: 10.25,
+            swap_used_ratio: 0.25,
+            root_used_pct: 66.5,
+            home_used_pct: 71.2,
+            var_used_pct: 77.0,
+            rapl: json!({}),
+            oracle: json!({}),
+        };
+        write_host_sensors_snapshot(&cfg, 18.4, &metrics);
+        let raw = fs::read_to_string(&tmp_path).expect("snapshot should be written");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("valid json");
+        assert_eq!(parsed["source"], "somatic_daemon_rust");
+        assert_eq!(parsed["cpu_temp_c"], 55.5);
+        assert_eq!(parsed["root_used_pct"], 66.5);
+        let _ = fs::remove_file(&tmp_path);
     }
 }

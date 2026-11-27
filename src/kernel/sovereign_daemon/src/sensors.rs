@@ -24,12 +24,14 @@ pub struct SystemSensorsSnapshot {
 impl SystemSensorsSnapshot {
     pub fn collect() -> Self {
         let (mem_total, mem_avail, mem_pct, swap_total, swap_used, swap_gb) = Self::read_meminfo();
-        let cpu_temp = Self::read_max_cpu_temp();
+        let (cpu_temp, tjmax_c) = Self::read_cpu_temp_and_tjmax();
         let psi_avg10 = Self::read_psi_cpu_avg10();
+        let yellow_c = tjmax_c - 5.0;
+        let moderate_c = tjmax_c - 15.0;
 
-        let pressure_level = if psi_avg10 > 50.0 || swap_gb > 16.0 || cpu_temp > 85.0 {
+        let pressure_level = if psi_avg10 > 50.0 || swap_gb > 16.0 || cpu_temp >= yellow_c {
             "critical".to_string()
-        } else if psi_avg10 > 20.0 || swap_gb > 8.0 || cpu_temp > 70.0 {
+        } else if psi_avg10 > 20.0 || swap_gb > 8.0 || cpu_temp >= moderate_c {
             "moderate".to_string()
         } else {
             "normal".to_string()
@@ -70,11 +72,59 @@ impl SystemSensorsSnapshot {
         }
 
         let used = total.saturating_sub(avail);
-        let mem_pct = if total > 0 { (used as f64 / total as f64) * 100.0 } else { 0.0 };
+        let mem_pct = if total > 0 {
+            (used as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
         let swap_used = swap_tot.saturating_sub(swap_free);
         let swap_gb = (swap_used as f64) / (1024.0 * 1024.0);
 
         (total, avail, mem_pct, swap_tot, swap_used, swap_gb)
+    }
+
+    fn discover_cpu_tjmax_c() -> f64 {
+        let mut best_crit: Option<f64> = None;
+        if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
+            for entry in entries.flatten() {
+                let hw = entry.path();
+                let name = fs::read_to_string(hw.join("name"))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_lowercase();
+                if !matches!(name.as_str(), "coretemp" | "k10temp" | "zenpower" | "cpu_thermal") {
+                    continue;
+                }
+                if let Ok(files) = fs::read_dir(&hw) {
+                    for file in files.flatten() {
+                        let fname = file.file_name().to_string_lossy().to_string();
+                        if fname.starts_with("temp")
+                            && (fname.ends_with("_crit") || fname.ends_with("_max"))
+                        {
+                            if let Ok(raw) = fs::read_to_string(file.path()) {
+                                if let Ok(mut v) = raw.trim().parse::<f64>() {
+                                    if v > 1000.0 {
+                                        v /= 1000.0;
+                                    }
+                                    if (70.0..=125.0).contains(&v) {
+                                        best_crit = Some(match best_crit {
+                                            Some(prev) => prev.min(v),
+                                            None => v,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        best_crit.unwrap_or(100.0)
+    }
+
+    fn read_cpu_temp_and_tjmax() -> (f64, f64) {
+        let tjmax = Self::discover_cpu_tjmax_c();
+        (Self::read_max_cpu_temp(), tjmax)
     }
 
     fn read_max_cpu_temp() -> f64 {
@@ -95,7 +145,11 @@ impl SystemSensorsSnapshot {
                 }
             }
         }
-        if max_temp == 0.0 { 45.0 } else { max_temp }
+        if max_temp == 0.0 {
+            45.0
+        } else {
+            max_temp
+        }
     }
 
     fn read_psi_cpu_avg10() -> f64 {
@@ -119,7 +173,8 @@ mod tests {
 
     #[test]
     fn read_meminfo_returns_positive_totals() {
-        let (total_kb, avail_kb, mem_pct, swap_total, swap_free, swap_pct) = SystemSensorsSnapshot::read_meminfo();
+        let (total_kb, avail_kb, mem_pct, swap_total, swap_free, swap_pct) =
+            SystemSensorsSnapshot::read_meminfo();
         assert!(total_kb > 0);
         assert!(avail_kb <= total_kb);
         assert!((0.0..=100.0).contains(&mem_pct));

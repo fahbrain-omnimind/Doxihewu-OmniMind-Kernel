@@ -48,7 +48,7 @@ ATIVO — Daemon Rust puro que simula o ciclo somatico do OmniMind: coleta telem
 - `rusqlite` 0.29 (bundled) — gravacao de snapshots em SQLite
 
 ## Notas
-- Caminhos hardcoded: `project_root = /opt/omnimind` (state_file e db_path derivados)
+- Caminhos hardcoded: `project_root = $OMNIMIND_ROOT` (state_file e db_path derivados)
 - Telemetria e simulada (valores fixos) — objetivo e validar performance e estabilidade do loop Rust
 - Log de ciclo a cada 10 iteracoes para evitar spam
 - Proxy do daemon somatico Python (`src/embodied_cognition/somatic_daemon.py`) em Rust nativo

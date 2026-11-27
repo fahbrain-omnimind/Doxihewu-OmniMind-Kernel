@@ -40,7 +40,7 @@ pub fn neutrosophic_construct_quadruple(
     value: f64,
     resonance: f64,
     noise: f64,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<PyObject> {
     let t_min = clip01(value - noise);
     let t_max = clip01(value + noise);
 
@@ -59,7 +59,7 @@ pub fn neutrosophic_construct_quadruple(
     result.set_item("c_max", i_max)?;
     result.set_item("d_min", f_min)?;
     result.set_item("d_max", f_max)?;
-    Ok(result.unbind().into())
+    Ok(result.into())
 }
 
 /// Aplica transformação Neo-Ilusória (T[]) a uma quadruple.
@@ -77,7 +77,7 @@ pub fn neutrosophic_apply_neo_transformation(
     d_mid: f64,
     mediator_phi: f64,
     epsilon_real: f64,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<PyObject> {
     let potential_i = c_mid;
     let potential_f = d_mid;
     let manifest_shift = potential_i * (mediator_phi / 100.0);
@@ -93,7 +93,7 @@ pub fn neutrosophic_apply_neo_transformation(
     result.set_item("b", new_b)?;
     result.set_item("c", new_c.max(0.0))?;
     result.set_item("d", new_d.max(0.0))?;
-    Ok(result.unbind().into())
+    Ok(result.into())
 }
 
 /// Calcula TOPSIS closeness para uma lista de quadruples.
@@ -108,17 +108,17 @@ pub fn neutrosophic_apply_neo_transformation(
 #[pyo3(signature = (quad_list, ideal_pos=None, ideal_neg=None))]
 pub fn neutrosophic_quadruple_topsis(
     py: Python,
-    quad_list: &Bound<'_, PyList>,
+    quad_list: &PyList,
     ideal_pos: Option<(f64, f64, f64, f64)>,
     ideal_neg: Option<(f64, f64, f64, f64)>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<PyObject> {
     let ip = ideal_pos.unwrap_or((1.0, 1.0, 0.0, 0.0));
     let ineg = ideal_neg.unwrap_or((0.0, 0.0, 1.0, 1.0));
 
     let mut closeness: Vec<f64> = Vec::with_capacity(quad_list.len());
 
     for item in quad_list.iter() {
-        let dict = item.cast::<PyDict>()?.clone();
+        let dict = item.downcast::<PyDict>()?;
         let a: f64 = dict
             .get_item("a")?
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyKeyError, _>("a"))?
@@ -147,7 +147,7 @@ pub fn neutrosophic_quadruple_topsis(
         closeness.push(if denom > 0.0 { dn / denom } else { 0.5 });
     }
 
-    Ok(PyList::new(py, &closeness)?.unbind().into())
+    Ok(PyList::new(py, &closeness).into())
 }
 
 /// Calcula o Tensor de Disponibilidade P_μν (Resistência/Esforço).
@@ -186,13 +186,21 @@ pub fn neutrosophic_sarannya_entropy(t: f64, i: f64, f: f64) -> f64 {
 ///
 /// Se indeterminacy > 0.5: factor = (indeterminacy * 100)^1.5
 /// Senão: factor = 1 + indeterminacy
+/// Neutrosophic Phi-HNOS scaling with C^1 cubic Hermite blend across (0.45, 0.55)
+/// so indeterminacy = 0.5 introduces no step discontinuity while preserving <=0.45 and >=0.55.
 #[pyfunction]
 pub fn neutrosophic_phi_hnos(base_phi: f64, indeterminacy: f64) -> f64 {
-    if indeterminacy > 0.5 {
-        let factor = (indeterminacy * 100.0).powf(1.5);
-        base_phi * factor
+    let ind = indeterminacy.max(0.0);
+    let lo = base_phi * (1.0 + ind);
+    let hi = base_phi * (ind * 100.0).powf(1.5);
+    if ind <= 0.45 {
+        lo
+    } else if ind >= 0.55 {
+        hi
     } else {
-        base_phi * (1.0 + indeterminacy)
+        let t = (ind - 0.45) / 0.10;
+        let s = t * t * (3.0 - 2.0 * t);
+        lo * (1.0 - s) + hi * s
     }
 }
 
@@ -242,5 +250,18 @@ mod tests {
         let result = neutrosophic_phi_hnos(100.0, 0.6);
         let expected = 100.0 * (60.0f64).powf(1.5);
         assert!((result - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_phi_hnos_smooth_transition_across_050() {
+        let base = 10.0;
+        let below = neutrosophic_phi_hnos(base, 0.5 - 1e-7);
+        let at_mid = neutrosophic_phi_hnos(base, 0.5);
+        let above = neutrosophic_phi_hnos(base, 0.5 + 1e-7);
+        assert!((below - at_mid).abs() / at_mid.max(1.0) < 1e-4);
+        assert!((above - at_mid).abs() / at_mid.max(1.0) < 1e-4);
+        assert!(below < at_mid && at_mid < above);
+        // Outside (0.45, 0.55), exact legacy branches preserved
+        assert!((neutrosophic_phi_hnos(base, 0.3) - 13.0).abs() < 1e-12);
     }
 }

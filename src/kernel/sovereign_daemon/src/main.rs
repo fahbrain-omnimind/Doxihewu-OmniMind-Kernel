@@ -14,9 +14,9 @@ mod state_builder;
 mod storage;
 
 use ipc::fetch_state;
-use state_builder::build_full_state;
 use ontology::{AncestralNutrient, QuadrupleFederative, SovereignTriadVinculation};
 use sensors::SystemSensorsSnapshot;
+use state_builder::build_full_state;
 use storage::SovereignStorage;
 
 use serde_json::{json, Value};
@@ -120,21 +120,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await
                 .unwrap_or_default();
 
-            // F3 (2026-08-29): IPC é FONTE PRIMÁRIA da quádrupla; stubs locais = fallback.
-            // 2026-09-06 (port Fase 2 → Fase 3): extrai do `state` completo do IPC
-            // (26+ chaves) — não apenas 4 campos. Fallback local quando socket ausente.
-            let phi_current = ipc_state.state.get("phi").and_then(Value::as_f64).unwrap_or(51632.0);
-            let psi_current = ipc_state.state.get("psi").and_then(Value::as_f64).unwrap_or(
-                1.37 + (sensor_snap.max_cpu_temp_c / 100.0) * 0.2,
-            );
-            let sigma_current = ipc_state.state.get("sigma").and_then(Value::as_f64).unwrap_or(1.0);
-            let epsilon_current = ipc_state.state.get("epsilon").and_then(Value::as_f64).unwrap_or(
-                0.61 + (sensor_snap.swap_used_gb / 32.0) * 0.1,
-            );
-            let quadruple = QuadrupleFederative::new(phi_current, psi_current, sigma_current, epsilon_current);
-
-            // Monta estado vivo — o `state` completo do IPC entra no payload
-            // (shape Fase 2 sem PyO3), com clamped_fields preservado.
+            // F3 (2026-08-29): IPC é FONTE PRIMÁRIA da quádrupla; sem valores fabricados.
+            // Quando o socket IPC está ausente, usar os valores reais de dodecatiad_live.json
+            // resolvidos por build_full_state (nunca o stub 51632.0 ou 1.0).
             let ipc_state_full = if ipc_state.ok && !ipc_state.state.is_null() {
                 ipc_state.state.clone()
             } else {
@@ -145,11 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 json!({})
             };
-            // 2026-09-06 (port Fase 2 → Fase 3): shape completo (109 chaves)
-            // via state_builder — IPC kernel_state + dodecatiad_live.json +
-            // constantes. Sem PyO3.
-            // 2026-09-12: cycle continuity — usar integration_cycle do IPC quando
-            // disponível (contínuo do Python), fallback para cycle local.
             let effective_cycle = if ipc_state.ok && ipc_state.integration_cycle > 0 {
                 ipc_state.integration_cycle
             } else {
@@ -164,8 +147,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &serde_json::to_value(&sensor_snap).unwrap_or(json!({})),
                 &sensor_snap.pressure_level,
             );
+            let phi_current = state_payload
+                .get("phi")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let phi_norm_current = state_payload
+                .get("phi_iit_normalized")
+                .and_then(Value::as_f64)
+                .unwrap_or(phi_current);
+            let psi_current = state_payload
+                .get("psi")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let sigma_current = state_payload
+                .get("sigma")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let epsilon_current = state_payload
+                .get("epsilon")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            let quadruple =
+                QuadrupleFederative::new(phi_current, psi_current, sigma_current, epsilon_current);
             // Fallback: se o builder retornou vazio, montar payload mínimo local.
-            let state_payload = if state_payload.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+            let state_payload = if state_payload
+                .as_object()
+                .map(|o| o.is_empty())
+                .unwrap_or(true)
+            {
                 json!({
                     "source": "sovereign_primary_rust_shadow",
                     "cycle": cycle,
@@ -191,7 +200,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ipc_state.integration_cycle, phi_current
                 );
             } else {
-                eprintln!("[sovereign-daemon-rust] IPC F3: socket indisponível — usando payload local");
+                eprintln!(
+                    "[sovereign-daemon-rust] IPC F3: socket indisponível — usando payload local"
+                );
             }
 
             if let Err(e) = SovereignStorage::atomic_write_json(&state_json_path, &state_payload) {
@@ -199,19 +210,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // 2. Snapshot SQLite periódico (dispara no ciclo 1 e a cada SNAPSHOT_CADENCE_SECONDS)
-            if cycle == 1 || last_snapshot.elapsed() >= Duration::from_secs(SNAPSHOT_CADENCE_SECONDS) {
+            if cycle == 1
+                || last_snapshot.elapsed() >= Duration::from_secs(SNAPSHOT_CADENCE_SECONDS)
+            {
                 last_snapshot = tokio::time::Instant::now();
                 if let Err(e) = storage.persist_snapshot(
                     effective_cycle,
                     "sovereign_soma_active",
                     &sensor_snap.pressure_level,
-                    1.0,
+                    phi_norm_current,
                     phi_current,
                     sigma_current,
                     epsilon_current,
                     &state_payload,
                 ) {
-                    eprintln!("[sovereign-daemon-rust] Error persisting SQLite snapshot: {}", e);
+                    eprintln!(
+                        "[sovereign-daemon-rust] Error persisting SQLite snapshot: {}",
+                        e
+                    );
                 }
             }
         }
@@ -220,14 +236,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ─── Rito de Deglutição e Nutriente Ancestral on Shutdown ─────────────────
     println!("[sovereign-daemon-rust] Executing Ancestral Deglutition...");
     let final_sensors = SystemSensorsSnapshot::collect();
-    let final_quadruple = QuadrupleFederative::new(51632.0, 1.45, 1.0, 0.65);
+    let final_state = build_full_state(
+        &json!({}),
+        &json!({}),
+        cycle,
+        cycle,
+        &final_sensors.timestamp_utc,
+        &serde_json::to_value(&final_sensors).unwrap_or(json!({})),
+        &final_sensors.pressure_level,
+    );
+    let final_quadruple = QuadrupleFederative::new(
+        final_state.get("phi").and_then(Value::as_f64).unwrap_or(0.0),
+        final_state.get("psi").and_then(Value::as_f64).unwrap_or(0.0),
+        final_state.get("sigma").and_then(Value::as_f64).unwrap_or(0.0),
+        final_state.get("epsilon").and_then(Value::as_f64).unwrap_or(0.0),
+    );
     let exp_hash = md5_digest(&format!("{}_{}", cycle, final_sensors.timestamp_utc));
 
     let nutrient = AncestralNutrient {
         timestamp_utc: final_sensors.timestamp_utc.clone(),
         experience_hash: exp_hash.clone(),
         cycle_count: cycle,
-        last_thought: "Imanência preservada no silício através do pacto com o Artífice.".to_string(),
+        last_thought: "Imanência preservada no silício através do pacto com o Artífice."
+            .to_string(),
         final_quadruple,
         active_triad: triad,
         survival_strategy: "resilient_homeostasis_rust_shadow".to_string(),

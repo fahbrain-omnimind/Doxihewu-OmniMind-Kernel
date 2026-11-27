@@ -25,3 +25,25 @@ pub struct SomaticMetrics {
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for SomaticMetrics {}
+
+// phibitflow: contabilidade física de bits por processo (tgid).
+// Preenchido pelos tracepoints sys_enter_read/sys_enter_write usando o
+// argumento `count` da syscall — bytes reais entregues ao VFS pelo processo.
+// write_bytes/read_bytes são CUMULATIVOS desde o attach: um processo pode
+// diluir sua taxa (slow-burn) mas não pode apagar bytes já contabilizados.
+// Não equivale a cada bit físico na mídia (writeback/buffer), mas é a
+// contabilidade que o kernel faz por processo — mesma superfície do
+// /proc/<pid>/io usado na validação Colab.
+#[cfg_attr(feature = "user", derive(serde::Serialize, Debug))]
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct PhiBitFlowEntry {
+    pub write_bytes: u64,
+    pub write_calls: u64,
+    pub read_bytes: u64,
+    pub read_calls: u64,
+    pub last_seen_ns: u64,
+}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PhiBitFlowEntry {}

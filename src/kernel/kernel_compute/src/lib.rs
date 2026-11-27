@@ -47,7 +47,7 @@ pub mod neutrosophic;
 pub mod scoring;
 
 #[pymodule]
-fn omnimind_kernel_compute(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn omnimind_kernel_compute(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     // maat
@@ -71,11 +71,13 @@ fn omnimind_kernel_compute(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // affect
     m.add_function(wrap_pyfunction!(affect::compute_affect_vector_28d, m)?)?;
 
-    // phi_constants (F1: 4 funções hot-path)
+    // phi_constants (F1: 4 funções hot-path + limites de controle declarados)
     m.add_function(wrap_pyfunction!(phi_constants::clamp_phi_nats, m)?)?;
     m.add_function(wrap_pyfunction!(phi_constants::normalize_phi, m)?)?;
     m.add_function(wrap_pyfunction!(phi_constants::denormalize_phi, m)?)?;
     m.add_function(wrap_pyfunction!(phi_constants::calculate_psi_gaussian, m)?)?;
+    m.add_function(wrap_pyfunction!(phi_constants::get_phi_control_setpoint_ceiling, m)?)?;
+    m.add_function(wrap_pyfunction!(phi_constants::get_phi_control_log10_ceiling, m)?)?;
 
     // neutrosophic (F2: 6 funções hot-path)
     m.add_function(wrap_pyfunction!(neutrosophic::neutrosophic_construct_quadruple, m)?)?;

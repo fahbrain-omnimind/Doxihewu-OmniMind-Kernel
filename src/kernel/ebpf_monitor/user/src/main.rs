@@ -5,8 +5,9 @@ use aya::{
     Ebpf,
 };
 use aya_log::EbpfLogger;
-use ebpf_monitor_common::SomaticMetrics;
+use ebpf_monitor_common::{PhiBitFlowEntry, SomaticMetrics};
 use log::{debug, info, warn};
+use std::collections::HashMap as StdHashMap;
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -149,11 +150,21 @@ async fn main() -> Result<(), anyhow::Error> {
         attach_tracepoint(&mut bpf, "syscalls", event, candidates, required)?;
     }
 
-    // Export metrics loop
-    let mut metrics_map: HashMap<&mut MapData, u32, SomaticMetrics> = HashMap::try_from(
-        bpf.map_mut("METRICS")
+    // Export metrics loop. take_map devolve Map owned — sem &mut preso
+    // em `bpf`, os dois mapas coexistem.
+    let mut metrics_map: HashMap<_, u32, SomaticMetrics> = HashMap::try_from(
+        bpf.take_map("METRICS")
             .context("missing METRICS map in loaded eBPF object")?,
     )?;
+    let mut phibitflow_map: HashMap<_, u32, PhiBitFlowEntry> = HashMap::try_from(
+        bpf.take_map("PHIBITFLOW")
+            .context("missing PHIBITFLOW map in loaded eBPF object")?,
+    )?;
+
+    // Estado anterior para derivar taxas (bits/s) a partir dos contadores
+    // cumulativos do mapa eBPF.
+    let mut prev_flow: StdHashMap<u32, PhiBitFlowEntry> = StdHashMap::new();
+    let mut prev_flow_ts_ms: u64 = 0;
     
     let export_dir = "/run/omnimind";
     if !Path::new(export_dir).exists() {
@@ -213,6 +224,70 @@ async fn main() -> Result<(), anyhow::Error> {
                          debug!("Failed to write sinthome state: {}", e);
                      }
 
+                     // phibitflow: contabilidade de bits por processo.
+                     // Contadores cumulativos do mapa eBPF -> taxas por delta.
+                     let dt_ms = if prev_flow_ts_ms > 0 {
+                         exported_at_epoch_ms.saturating_sub(prev_flow_ts_ms)
+                     } else {
+                         0
+                     };
+                     let dt_s = (dt_ms as f64) / 1000.0;
+                     let mut rows: Vec<(u32, PhiBitFlowEntry, u64, u64)> = Vec::new(); // (pid, entry, d_write, d_read)
+                     let mut cur_flow: StdHashMap<u32, PhiBitFlowEntry> = StdHashMap::new();
+                     let mut total_write_bytes: u64 = 0;
+                     let mut total_read_bytes: u64 = 0;
+                     for item in phibitflow_map.iter() {
+                         if let Ok((pid, entry)) = item {
+                             total_write_bytes = total_write_bytes.saturating_add(entry.write_bytes);
+                             total_read_bytes = total_read_bytes.saturating_add(entry.read_bytes);
+                             let (dw, dr) = match prev_flow.get(&pid) {
+                                 Some(prev) if dt_s > 0.0 => (
+                                     entry.write_bytes.saturating_sub(prev.write_bytes),
+                                     entry.read_bytes.saturating_sub(prev.read_bytes),
+                                 ),
+                                 _ => (0, 0),
+                             };
+                             cur_flow.insert(pid, entry);
+                             rows.push((pid, entry, dw, dr));
+                         }
+                     }
+                     prev_flow = cur_flow;
+                     prev_flow_ts_ms = exported_at_epoch_ms;
+                     rows.sort_by_key(|r| core::cmp::Reverse(r.2));
+                     let top_writers: Vec<serde_json::Value> = rows
+                         .iter()
+                         .take(8)
+                         .map(|(pid, e, dw, _dr)| {
+                             let comm = fs::read_to_string(format!("/proc/{}/comm", pid))
+                                 .map(|s| s.trim().to_string())
+                                 .unwrap_or_default();
+                             serde_json::json!({
+                                 "pid": pid,
+                                 "comm": comm,
+                                 "write_bytes": e.write_bytes,
+                                 "write_calls": e.write_calls,
+                                 "read_bytes": e.read_bytes,
+                                 "read_calls": e.read_calls,
+                                 "write_bits_per_s": if dt_s > 0.0 { ((*dw as f64) * 8.0 / dt_s) as u64 } else { 0 },
+                             })
+                         })
+                         .collect();
+                     let top_write_bits_s = rows
+                         .first()
+                         .map(|r| if dt_s > 0.0 { ((r.2 as f64) * 8.0 / dt_s) as u64 } else { 0 })
+                         .unwrap_or(0);
+                     let phibitflow_json = serde_json::json!({
+                         "schema_version": 1,
+                         "collector": "ebpf-aya",
+                         "exported_at_epoch_ms": exported_at_epoch_ms,
+                         "sample_interval_ms": dt_ms,
+                         "pids_tracked": rows.len(),
+                         "total_write_bytes": total_write_bytes,
+                         "total_read_bytes": total_read_bytes,
+                         "top_write_bits_per_s": top_write_bits_s,
+                         "top_writers": top_writers,
+                     });
+
                      let payload = serde_json::json!({
                          "schema_version": 1,
                          "source": "aya-ebpf-monitor",
@@ -229,6 +304,8 @@ async fn main() -> Result<(), anyhow::Error> {
                          "pressure_level": metrics.pressure_level,
                          // SinthomeLevel3b state
                          "sinthome": sinthome_json,
+                         // phibitflow: bit-flow físico por processo
+                         "phibitflow": phibitflow_json,
                      });
                      let json = serde_json::to_string(&payload).unwrap_or_default();
                      let export_tmp = export_path.with_extension("json.tmp");

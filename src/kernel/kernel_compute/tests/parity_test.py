@@ -49,8 +49,11 @@ def py_compute_sigma_operational_support(
     last_sigma,
 ):
     continuity_depth = float(np.clip(continuity_depth, 0.0, 1.0))
-    phi_silicon_support = float(
-        np.clip(math.log10(max(phi_raw_nats, 1.0)) / 6.0, 0.0, 1.0)
+    log10_ceil = math.log10(1.0 + 774480.0)
+    phi_silicon_support = (
+        float(np.clip(math.log10(1.0 + phi_raw_nats) / log10_ceil, 0.0, 1.0))
+        if (math.isfinite(phi_raw_nats) and phi_raw_nats > 0.0)
+        else 0.0
     )
     multiplicity_inverse = float(np.clip(1.0 / max(1.0, betti_0), 0.0, 1.0))
     last_sigma = float(np.clip(last_sigma, 0.0, 1.0))
@@ -316,6 +319,67 @@ def test_temporal_state_classifications_random_500():
 
     assert max_diff_collapse < 1e-12, f"collapse_risk diff: {max_diff_collapse}"
     assert state_diffs == 0, f"state classification diffs: {state_diffs}"
+
+
+def test_neutrosophic_logic_rust_python_parity():
+    """P1.2 — Verifica paridade exata entre NeutrosophicLogic (FFI) e referência Python."""
+    from src.metrics.neutrosophic_metrics import (
+        NeutrosophicLogic,
+        NeutrosophicQuadruple,
+        NeutrosophicTriplet,
+        _RUST_NEUTROSOPHIC_AVAILABLE,
+    )
+
+    assert _RUST_NEUTROSOPHIC_AVAILABLE is True
+
+    trip = NeutrosophicTriplet(0.75, 0.20, 0.15)
+    expected_entropy = 1.0 - ((0.75 - 0.15) ** 2) * (1.0 - 0.20)
+    assert abs(NeutrosophicLogic.calculate_sarannya_entropy(trip) - expected_entropy) < 1e-12
+
+    for ind in (0.2, 0.45, 0.50, 0.55, 0.8):
+        phi_hnos = NeutrosophicLogic.calculate_phi_hnos(100.0, ind)
+        assert math.isfinite(phi_hnos) and phi_hnos > 0.0
+
+    q1 = NeutrosophicLogic.construct_quadruple_interval(0.7, 0.8, 0.05)
+    q2 = NeutrosophicLogic.construct_quadruple_interval(0.3, 0.4, 0.05)
+    neo = NeutrosophicLogic.apply_neo_transformation(q1, mediator_phi=50.0, epsilon_real=0.02)
+    assert abs(neo.a - (0.7 + 0.2 * 0.5)) < 1e-12
+    scores = NeutrosophicLogic.quadruple_topsis([q1, q2])
+    assert len(scores) == 2 and scores[0] > scores[1]
+    avail = NeutrosophicLogic.calculate_availability_metric(0.6, 0.3)
+    assert abs(avail - ((1.0 / 0.7) * 0.03)) < 1e-12
+
+
+def test_affect_28d_ffi_and_kuramoto_parity():
+    """P1.1 & P1.2 — Verifica FFI compute_fast_affect_vector_28d e paridade SovereignKuramotoSolver."""
+    from src.orchestration.affect_modulator import compute_fast_affect_vector_28d
+    from src.kernel.sovereign_kuramoto import (
+        SovereignKuramotoSolver,
+        _PySovereignKuramoto,
+        is_rust_available,
+    )
+
+    assert is_rust_available() is True
+    out = compute_fast_affect_vector_28d(
+        {
+            "winnicott_true_self": 0.8,
+            "freud_tension": 0.3,
+            "quantum_potency": 0.7,
+            "thermal_pressure": 0.2,
+            "load_pressure": 0.25,
+        }
+    )
+    assert isinstance(out, dict) and len(out) > 0
+
+    omega = [1.0, 1.1, 1.2, 1.3]
+    coupling = [0.2 if i != j else 0.0 for i in range(4) for j in range(4)]
+    phases = [0.1, 0.5, 1.0, 1.5]
+    rs_solver = SovereignKuramotoSolver(omega, coupling, phases, noise_amp=0.0)
+    py_solver = _PySovereignKuramoto(omega, coupling, phases, noise_amp=0.0)
+    for _ in range(10):
+        r_rs = rs_solver.step(0.05, seed=0)
+        r_py = py_solver.step(0.05, seed=0)
+        assert abs(r_rs - r_py) < 1e-12
 
 
 if __name__ == "__main__":

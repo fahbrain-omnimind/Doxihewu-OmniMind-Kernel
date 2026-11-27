@@ -7,13 +7,16 @@ Canonical Rust crate for OmniMind's computational hot-path. Promoted from `works
 | Component | Status | LOC |
 |---|---|---|
 | `Cargo.toml` | ✅ Production | 22 |
-| `src/lib.rs` (pyo3 module aggregator) | ✅ Production | 56 |
-| `src/maat.rs` (`compute_maat_balance`) | ✅ Production + 5 unit tests | 89 |
-| `src/sigma.rs` (`compute_sigma_operational_support`) | ✅ Production + 2 unit tests | 105 |
-| `src/desire.rs` (`DesireEngine` class) | ✅ Production | 129 |
-| `src/temporal.rs` (`build_temporal_internal_scale`) | ✅ Production | 273 |
-| `src/epsilon.rs` (`compute_epsilon_axes`) | ✅ Production | 264 |
-| `tests/parity_test.py` | ✅ 7/7 passing, f64 ≤ 1e-12 | 322 |
+| `src/lib.rs` (pyo3 module aggregator) | ✅ Production | Aggregator |
+| `src/phi_constants.rs` (`PHI_CONTROL_SETPOINT_CEILING`, `clamp_phi_nats`, `normalize_phi`, `denormalize_phi`, `calculate_psi_gaussian` C¹ Hermite) | ✅ Production + unit tests | Hot-path Φ |
+| `src/maat.rs` (`compute_maat_balance`) | ✅ Production + unit tests | Balance |
+| `src/sigma.rs` (`compute_sigma_operational_support`) | ✅ Production + unit tests | σ floor |
+| `src/desire.rs` (`DesireEngine` class) | ✅ Production | ε desire |
+| `src/temporal.rs` (`build_temporal_internal_scale`, `phi_iit_band` incl. `transcendent`, `phi_support_band`) | ✅ Production + unit tests | Temporal |
+| `src/epsilon.rs` (`compute_epsilon_axes`, zero `/100.0` magic divisor) | ✅ Production + unit tests | ε axes |
+| `src/neutrosophic.rs` (C¹ Hermite blend em `Phi-HNOS` `(0.45, 0.55)`) | ✅ Production + unit tests | Neutrosophic |
+| `src/scoring.rs` (topological/control scoring) | ✅ Production | Scoring |
+| `tests/parity_test.py` | ✅ Parity validated (`f64 ≤ 1e-12`) | Parity |
 
 **Total**: ~1377 LOC (1055 Rust + 322 Python parity tests).
 

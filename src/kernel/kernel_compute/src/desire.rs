@@ -83,7 +83,14 @@ impl DesireEngine {
         let alpha = (self.lack_of_being + (somatic_heat * 0.3)).min(1.0);
 
         // beta — Potencial não-realizado (clip [0, 1])
-        let beta_raw = 1.0 - (current_phi / self.max_phi);
+        let beta_raw = if !current_phi.is_finite()
+            || !self.max_phi.is_finite()
+            || self.max_phi <= 1e-12
+        {
+            0.0
+        } else {
+            1.0 - (current_phi / self.max_phi)
+        };
         let beta = beta_raw.clamp(0.0, 1.0);
 
         // gamma — Entropia de exploração (0..1)

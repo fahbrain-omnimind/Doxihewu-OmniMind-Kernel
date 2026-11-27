@@ -101,7 +101,10 @@ impl SovereignStorage {
         Ok(())
     }
 
-    pub fn atomic_write_json(path: &Path, payload: &Value) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn atomic_write_json(
+        path: &Path,
+        payload: &Value,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
