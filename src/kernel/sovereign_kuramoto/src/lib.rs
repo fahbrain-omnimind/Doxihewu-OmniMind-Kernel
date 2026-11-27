@@ -10,7 +10,7 @@
 //! extensions (hyper-Kuramoto, INRC field, neutrosophic threshold, psychoanalytic
 //! coupling) are OmniMind-original.
 //!
-//! License: CC-BY-NC-ND-4.0 (OmniMind Sovereign Federation)
+//! License: Apache-2.0 (OmniMind Sovereign Federation)
 
 #![allow(non_local_definitions)]
 
@@ -335,7 +335,7 @@ impl PyHopfBifurcationMonitor {
     }
 
     /// Get summary as a dict.
-    fn summary(&self, py: Python) -> PyResult<PyObject> {
+    fn summary(&self, py: Python) -> PyResult<Py<PyAny>> {
         let s = self.inner.summary();
         let dict = PyDict::new(py);
         dict.set_item("spectral_radius", s.spectral_radius)?;
@@ -344,7 +344,7 @@ impl PyHopfBifurcationMonitor {
         dict.set_item("bifurcation_just_occurred", s.bifurcation_just_occurred)?;
         dict.set_item("trend", s.trend)?;
         dict.set_item("history_len", s.history_len)?;
-        Ok(dict.into())
+        Ok(dict.unbind().into())
     }
 
     #[getter]
@@ -368,7 +368,7 @@ impl PyHopfBifurcationMonitor {
 // ============================================================
 
 #[pymodule]
-fn omnimind_sovereign_kuramoto(_py: Python, m: &PyModule) -> PyResult<()> {
+fn omnimind_sovereign_kuramoto(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySovereignKuramoto>()?;
     m.add_class::<PyPsychoanalyticLif>()?;
     m.add_class::<PyPsychoanalyticLifBatch>()?;
